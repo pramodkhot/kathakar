@@ -46,6 +46,17 @@ jobs:
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
+      - name: Print SHA-1 fingerprint
+        run: |
+          echo "=== SHA-1 for Firebase ==="
+          keytool -list -v \
+            -keystore ~/.android/debug.keystore \
+            -alias androiddebugkey \
+            -storepass android \
+            -keypass android 2>/dev/null | grep "SHA1:"
+          echo "=== Copy the SHA1 above and add it to Firebase Console ==="
+          echo "Firebase Console > Project Settings > Your Apps > Add Fingerprint"
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
