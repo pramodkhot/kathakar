@@ -1,4 +1,4 @@
-name: Kathakar Android CI — Build APK
+name: Kathakar Android CI
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -22,33 +25,46 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
 
       - name: Write google-services.json
-        run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
 
       - name: Verify google-services.json
         run: |
           if [ -f "app/google-services.json" ]; then
-            echo "✅ google-services.json found"
+            echo "google-services.json OK — $(wc -c < app/google-services.json) bytes"
           else
-            echo "❌ google-services.json missing — add GOOGLE_SERVICES_JSON secret"
+            echo "MISSING: Add GOOGLE_SERVICES_JSON secret"
             exit 1
           fi
 
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Download gradle wrapper jar
+      - name: Install Gradle 8.7 directly
         run: |
-          mkdir -p gradle/wrapper
-          curl -Lo gradle/wrapper/gradle-wrapper.jar \
-            "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar"
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp/gradle
+          echo "/tmp/gradle/gradle-8.7/bin" >> $GITHUB_PATH
+
+      - name: Verify Gradle
+        run: gradle --version
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('gradle/libs.versions.toml', 'app/build.gradle.kts') }}
+          restore-keys: gradle-
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace
 
-      - name: Upload Debug APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Kathakar-debug-${{ github.run_number }}
@@ -56,4 +72,7 @@ jobs:
           retention-days: 30
 
       - name: Confirm APK built
-        run: ls -lh app/build/outputs/apk/debug/
+        if: success()
+        run: |
+          echo "BUILD SUCCESSFUL"
+          ls -lh app/build/outputs/apk/debug/
