@@ -22,36 +22,28 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.7'
+          cache: 'gradle'
 
       - name: Write google-services.json
         run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
 
-      - name: Verify google-services.json exists
+      - name: Verify google-services.json
         run: |
           if [ -f "app/google-services.json" ]; then
-            echo "google-services.json found"
-            head -3 app/google-services.json
+            echo "✅ google-services.json found"
           else
-            echo "ERROR: google-services.json missing"
+            echo "❌ google-services.json missing — add GOOGLE_SERVICES_JSON secret"
             exit 1
           fi
 
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
-          restore-keys: ${{ runner.os }}-gradle-
+      - name: Download gradle wrapper jar
+        run: |
+          mkdir -p gradle/wrapper
+          curl -Lo gradle/wrapper/gradle-wrapper.jar \
+            "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar"
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
@@ -63,7 +55,5 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-      - name: Show APK details
-        run: |
-          echo "Build complete!"
-          ls -lh app/build/outputs/apk/debug/
+      - name: Confirm APK built
+        run: ls -lh app/build/outputs/apk/debug/
