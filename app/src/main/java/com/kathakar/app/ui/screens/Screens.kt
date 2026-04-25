@@ -398,7 +398,7 @@ fun ProfileScreen(user: User, onSignOut: () -> Unit, onBuyCoins: () -> Unit, onS
         LazyColumn(modifier = Modifier.fillMaxSize().padding(p), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(50), modifier = Modifier.size(60.dp)) { Box(Alignment.Center) { Text(text = user.initials, fontWeight = FontWeight.Medium, fontSize = 22.sp, color = MaterialTheme.colorScheme.onPrimaryContainer) } }
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(50), modifier = Modifier.size(60.dp)) { Box(contentAlignment = Alignment.Center) { Text(text = user.initials, fontWeight = FontWeight.Medium, fontSize = 22.sp, color = MaterialTheme.colorScheme.onPrimaryContainer) } }
                     Spacer(Modifier.width(14.dp))
                     Column {
                         Text(text = user.name, fontWeight = FontWeight.Medium, fontSize = 17.sp)
