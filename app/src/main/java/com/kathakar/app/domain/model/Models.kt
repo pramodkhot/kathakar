@@ -31,10 +31,14 @@ data class User(
     val initials: String get() = name.split(" ").filter { it.isNotBlank() }
         .take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "K" }
     val isAdmin  get() = role == UserRole.ADMIN
-    val isWriter get() = role == UserRole.WRITER || role == UserRole.ADMIN
+    val isWriter get() = true // every user can read and write stories
 }
 
-data class Follow(val followerId: String = "", val followeeId: String = "", val createdAt: Timestamp? = null)
+data class Follow(
+    val followerId: String = "",
+    val followeeId: String = "",
+    val createdAt: Timestamp? = null
+)
 
 data class Story(
     val storyId: String = "",
@@ -62,6 +66,9 @@ data class Episode(
     val content: String = "",
     val wordCount: Int = 0,
     val unlockCostCoins: Int = MvpConfig.EPISODE_UNLOCK_COST,
+    // @get:JvmName fixes Firestore deserialization — Kotlin "is" prefix fields
+    // generate isFree() getter which conflicts with Firestore Java reflection
+    @get:JvmName("getIsFree")
     val isFree: Boolean = false,
     val status: String = "DRAFT",
     val createdAt: Timestamp? = null
@@ -96,17 +103,36 @@ data class CoinTransaction(
     val createdAt: Timestamp? = null
 )
 
-data class AdminStats(val totalUsers: Int = 0, val totalStories: Int = 0, val totalCoinsCirculated: Int = 0)
+data class AdminStats(
+    val totalUsers: Int = 0,
+    val totalStories: Int = 0,
+    val totalCoinsCirculated: Int = 0
+)
 
 object KathakarMeta {
-    val CATEGORIES = listOf("Romance","Thriller","Fantasy","Horror","Drama","Comedy","Mystery","Sci-Fi","Historical","Mythology","Devotional","Biography")
-    val LANGUAGES  = listOf("en" to "English","hi" to "Hindi","mr" to "Marathi","ta" to "Tamil","te" to "Telugu","bn" to "Bengali","gu" to "Gujarati","kn" to "Kannada")
+    val CATEGORIES = listOf(
+        "Romance", "Thriller", "Fantasy", "Horror", "Drama",
+        "Comedy", "Mystery", "Sci-Fi", "Historical", "Mythology",
+        "Devotional", "Biography"
+    )
+    val LANGUAGES = listOf(
+        "en" to "English",
+        "hi" to "Hindi",
+        "mr" to "Marathi",
+        "ta" to "Tamil",
+        "te" to "Telugu",
+        "bn" to "Bengali",
+        "gu" to "Gujarati",
+        "kn" to "Kannada"
+    )
 }
 
 fun generateSearchTokens(title: String, authorName: String): List<String> {
     val tokens = mutableSetOf<String>()
-    (title + " " + authorName).lowercase().split(" ").filter { it.length >= 2 }.forEach { word ->
-        for (i in 2..word.length) tokens.add(word.substring(0, i))
-    }
+    (title + " " + authorName).lowercase().split(" ")
+        .filter { it.length >= 2 }
+        .forEach { word ->
+            for (i in 2..word.length) tokens.add(word.substring(0, i))
+        }
     return tokens.toList()
 }
