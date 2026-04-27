@@ -1,4 +1,4 @@
-package com.kathakar.app.navigation
+package com.kathakar.app.viewmodel
 
 import androidx.compose.runtime.*
 import androidx.hilt.navigation.compose.hiltViewModel
