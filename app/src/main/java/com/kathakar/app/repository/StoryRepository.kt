@@ -16,7 +16,7 @@ class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
     private val storiesCol  get() = db.collection(FirestoreCollections.STORIES)
     private val episodesCol get() = db.collection(FirestoreCollections.EPISODES)
 
-    // KEY FIX: query by string "PUBLISHED" not enum — avoids status mismatch
+    // Paginated published stories for home feed
     suspend fun getStories(
         category: String? = null,
         language: String? = null,
@@ -59,14 +59,14 @@ class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Failed") }
     }
 
+    // Episodes for a story - filter/sort in memory to avoid composite index requirement
     suspend fun getEpisodes(storyId: String): Resource<List<Episode>> {
         return try {
-            val snap = episodesCol
-                .whereEqualTo("storyId", storyId)
-                .whereEqualTo("status", "PUBLISHED")
-                .orderBy("chapterNumber", Query.Direction.ASCENDING)
-                .get().await()
-            Resource.Success(snap.toObjects(Episode::class.java))
+            val snap = episodesCol.whereEqualTo("storyId", storyId).get().await()
+            val list = snap.toObjects(Episode::class.java)
+                .filter { it.status == "PUBLISHED" }
+                .sortedBy { it.chapterNumber }
+            Resource.Success(list)
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Failed") }
     }
 
@@ -78,11 +78,13 @@ class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Failed") }
     }
 
+    // Author's own stories - sort in memory to avoid composite index requirement
     suspend fun getAuthorStories(authorId: String): Resource<List<Story>> {
         return try {
-            val snap = storiesCol.whereEqualTo("authorId", authorId)
-                .orderBy("createdAt", Query.Direction.DESCENDING).get().await()
-            Resource.Success(snap.toObjects(Story::class.java))
+            val snap = storiesCol.whereEqualTo("authorId", authorId).get().await()
+            val list = snap.toObjects(Story::class.java)
+                .sortedByDescending { it.createdAt?.seconds ?: 0 }
+            Resource.Success(list)
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Failed") }
     }
 
@@ -92,19 +94,19 @@ class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
                       else storiesCol.document(story.storyId)
             val tokens = generateSearchTokens(story.title, story.authorName)
             val data = HashMap<String, Any>()
-            data["storyId"]      = ref.id
-            data["title"]        = story.title
-            data["description"]  = story.description
-            data["coverUrl"]     = story.coverUrl
-            data["authorId"]     = story.authorId
-            data["authorName"]   = story.authorName
-            data["category"]     = story.category
-            data["language"]     = story.language
-            data["searchTokens"] = tokens
-            data["status"]       = story.status  // stored as plain string "PUBLISHED"/"DRAFT"
-            data["totalEpisodes"]= story.totalEpisodes
-            data["totalReads"]   = story.totalReads
-            data["updatedAt"]    = Timestamp.now()
+            data["storyId"]       = ref.id
+            data["title"]         = story.title
+            data["description"]   = story.description
+            data["coverUrl"]      = story.coverUrl
+            data["authorId"]      = story.authorId
+            data["authorName"]    = story.authorName
+            data["category"]      = story.category
+            data["language"]      = story.language
+            data["searchTokens"]  = tokens
+            data["status"]        = story.status
+            data["totalEpisodes"] = story.totalEpisodes
+            data["totalReads"]    = story.totalReads
+            data["updatedAt"]     = Timestamp.now()
             if (story.createdAt == null) data["createdAt"] = Timestamp.now()
             else data["createdAt"] = story.createdAt
             ref.set(data).await()
@@ -121,17 +123,19 @@ class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
             val ref = if (episode.episodeId.isEmpty()) episodesCol.document()
                       else episodesCol.document(episode.episodeId)
             val wc = episode.content.trim().split("\\s+".toRegex()).filter { it.isNotEmpty() }.size
+            // Chapter 1 is ALWAYS free for all readers
+            val isFreeChapter = (episode.chapterNumber == 1)
             val data = HashMap<String, Any>()
-            data["episodeId"]      = ref.id
-            data["storyId"]        = episode.storyId
-            data["authorId"]       = episode.authorId
-            data["chapterNumber"]  = episode.chapterNumber
-            data["title"]          = episode.title
-            data["content"]        = episode.content
-            data["wordCount"]      = wc
-            data["unlockCostCoins"]= episode.unlockCostCoins
-            data["isFree"]         = (episode.chapterNumber == 1)
-            data["status"]         = episode.status  // stored as plain string
+            data["episodeId"]       = ref.id
+            data["storyId"]         = episode.storyId
+            data["authorId"]        = episode.authorId
+            data["chapterNumber"]   = episode.chapterNumber
+            data["title"]           = episode.title
+            data["content"]         = episode.content
+            data["wordCount"]       = wc
+            data["unlockCostCoins"] = if (isFreeChapter) 0 else episode.unlockCostCoins
+            data["isFree"]          = isFreeChapter  // explicitly always true for ch1
+            data["status"]          = episode.status
             if (episode.createdAt == null) data["createdAt"] = Timestamp.now()
             else data["createdAt"] = episode.createdAt
             ref.set(data).await()
@@ -150,19 +154,24 @@ class LibraryRepository @Inject constructor(private val db: FirebaseFirestore) {
 
     suspend fun getUserLibrary(userId: String): Resource<List<LibraryEntry>> {
         return try {
-            val snap = libCol.whereEqualTo("userId", userId)
-                .orderBy("lastReadAt", Query.Direction.DESCENDING).get().await()
-            Resource.Success(snap.toObjects(LibraryEntry::class.java))
+            // Sort in memory to avoid composite index requirement
+            val snap = libCol.whereEqualTo("userId", userId).get().await()
+            val list = snap.toObjects(LibraryEntry::class.java)
+                .sortedByDescending { it.lastReadAt?.seconds ?: 0 }
+            Resource.Success(list)
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Failed") }
     }
 
     suspend fun getEntry(userId: String, storyId: String): LibraryEntry? {
-        return try { libCol.document(libraryDocId(userId, storyId)).get().await()
-            .toObject(LibraryEntry::class.java) } catch (e: Exception) { null }
+        return try {
+            libCol.document(libraryDocId(userId, storyId)).get().await()
+                .toObject(LibraryEntry::class.java)
+        } catch (e: Exception) { null }
     }
 
     suspend fun upsert(entry: LibraryEntry) {
-        try { libCol.document(libraryDocId(entry.userId, entry.storyId)).set(entry).await() }
-        catch (_: Exception) { }
+        try {
+            libCol.document(libraryDocId(entry.userId, entry.storyId)).set(entry).await()
+        } catch (_: Exception) { }
     }
 }
