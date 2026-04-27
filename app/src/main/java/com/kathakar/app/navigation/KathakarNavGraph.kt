@@ -29,7 +29,7 @@ sealed class Screen(val route: String) {
     }
 }
 
-// Clean tab switching — saves state, no back stack buildup
+// Clean tab switching - saves state, no back stack buildup
 fun NavHostController.switchTab(route: String) {
     navigate(route) {
         popUpTo(Screen.Home.route) { saveState = true }
@@ -47,7 +47,6 @@ fun KathakarNavGraph(navController: NavHostController) {
         navController    = navController,
         startDestination = if (auth.isAuthenticated) Screen.Home.route else Screen.Login.route
     ) {
-
         composable(Screen.Login.route) {
             LoginScreen(viewModel = authVM, onSuccess = {
                 navController.navigate(Screen.Home.route) {
@@ -97,6 +96,7 @@ fun KathakarNavGraph(navController: NavHostController) {
                 onCreateEpisode = { sid, ch -> navController.navigate(Screen.CreateEpisode.go(sid, ch)) },
                 onAiClick       = { navController.navigate(Screen.AiWrite.route) },
                 onBack          = { navController.switchTab(Screen.Home.route) },
+                onReadStory     = { navController.navigate(Screen.StoryDetail.go(it)) },
                 onLibraryClick  = { navController.switchTab(Screen.Library.route) },
                 onProfileClick  = { navController.switchTab(Screen.Profile.route) }
             )
@@ -105,13 +105,13 @@ fun KathakarNavGraph(navController: NavHostController) {
         composable(Screen.CreateStory.route) {
             val user = auth.user ?: return@composable
             CreateStoryScreen(
-                user   = user,
+                user    = user,
                 onSaved = { sid ->
                     navController.navigate(Screen.CreateEpisode.go(sid, 1)) {
                         popUpTo(Screen.CreateStory.route) { inclusive = true }
                     }
                 },
-                onBack = { navController.popBackStack() }
+                onBack  = { navController.popBackStack() }
             )
         }
 
