@@ -171,7 +171,7 @@ class StoryViewModel @Inject constructor(
 
     fun unlock(episode: Episode, user: User) {
         if (_s.value.unlockingId != null) return
-        // Author reads all their own stories for free - no coins spent
+        // Author reads all their own stories for free
         if (user.userId == episode.authorId) {
             _s.update {
                 it.copy(unlockedIds = it.unlockedIds + episode.episodeId,
@@ -184,7 +184,7 @@ class StoryViewModel @Inject constructor(
             when (val r = coinRepo.unlockEpisode(user.userId, episode.authorId, episode)) {
                 is Resource.Success -> _s.update {
                     it.copy(unlockingId = null,
-                        unlockedIds = it.unlockedIds + episode.episodeId,
+                        unlockedIds    = it.unlockedIds + episode.episodeId,
                         justUnlockedId = episode.episodeId,
                         newCoinBalance = r.data)
                 }
@@ -220,6 +220,9 @@ class ReaderViewModel @Inject constructor(private val storyRepo: StoryRepository
 // ── Writer ────────────────────────────────────────────────────────────────────
 data class WriterUiState(
     val myStories: List<Story> = emptyList(),
+    // Episodes per story — key is storyId
+    val episodesMap: Map<String, List<Episode>> = emptyMap(),
+    val expandedStoryId: String? = null,
     val storyTitle: String = "",
     val storyDesc: String = "",
     val storyCategory: String = "",
@@ -231,6 +234,7 @@ data class WriterUiState(
     val isSaving: Boolean = false,
     val savedStoryId: String? = null,
     val savedEpisodeId: String? = null,
+    val message: String? = null,
     val error: String? = null
 )
 
@@ -244,6 +248,62 @@ class WriterViewModel @Inject constructor(private val storyRepo: StoryRepository
         when (val r = storyRepo.getAuthorStories(authorId)) {
             is Resource.Success -> _s.update { it.copy(myStories = r.data, isLoading = false) }
             is Resource.Error   -> _s.update { it.copy(isLoading = false, error = r.message) }
+            else -> Unit
+        }
+    }
+
+    // Load episodes for a specific story when expanded
+    fun loadEpisodesForStory(storyId: String) = viewModelScope.launch {
+        when (val r = storyRepo.getAuthorEpisodes(storyId)) {
+            is Resource.Success -> {
+                val updated = _s.value.episodesMap.toMutableMap()
+                updated[storyId] = r.data
+                _s.update { it.copy(episodesMap = updated) }
+            }
+            else -> Unit
+        }
+    }
+
+    fun toggleExpanded(storyId: String) {
+        val current = _s.value.expandedStoryId
+        if (current == storyId) {
+            _s.update { it.copy(expandedStoryId = null) }
+        } else {
+            _s.update { it.copy(expandedStoryId = storyId) }
+            loadEpisodesForStory(storyId)
+        }
+    }
+
+    fun deleteEpisode(episodeId: String, storyId: String) = viewModelScope.launch {
+        when (val r = storyRepo.deleteEpisode(episodeId, storyId)) {
+            is Resource.Success -> {
+                // Remove from local map immediately
+                val updated = _s.value.episodesMap.toMutableMap()
+                updated[storyId] = updated[storyId]?.filter { it.episodeId != episodeId } ?: emptyList()
+                // Also decrement totalEpisodes in myStories
+                val updatedStories = _s.value.myStories.map { story ->
+                    if (story.storyId == storyId) story.copy(totalEpisodes = (story.totalEpisodes - 1).coerceAtLeast(0))
+                    else story
+                }
+                _s.update { it.copy(episodesMap = updated, myStories = updatedStories, message = "Chapter deleted") }
+            }
+            is Resource.Error -> _s.update { it.copy(error = r.message) }
+            else -> Unit
+        }
+    }
+
+    fun updateEpisode(episodeId: String, storyId: String, title: String, content: String) = viewModelScope.launch {
+        _s.update { it.copy(isSaving = true) }
+        when (val r = storyRepo.updateEpisode(episodeId, title, content)) {
+            is Resource.Success -> {
+                // Update local map immediately
+                val updated = _s.value.episodesMap.toMutableMap()
+                updated[storyId] = updated[storyId]?.map { ep ->
+                    if (ep.episodeId == episodeId) ep.copy(title = title, content = content) else ep
+                } ?: emptyList()
+                _s.update { it.copy(episodesMap = updated, isSaving = false, message = "Chapter updated") }
+            }
+            is Resource.Error -> _s.update { it.copy(isSaving = false, error = r.message) }
             else -> Unit
         }
     }
@@ -297,8 +357,9 @@ class WriterViewModel @Inject constructor(private val storyRepo: StoryRepository
         }
     }
 
-    fun resetSaved() = _s.update { it.copy(savedStoryId = null, savedEpisodeId = null) }
-    fun clearError() = _s.update { it.copy(error = null) }
+    fun resetSaved()    = _s.update { it.copy(savedStoryId = null, savedEpisodeId = null) }
+    fun clearMessage()  = _s.update { it.copy(message = null) }
+    fun clearError()    = _s.update { it.copy(error = null) }
 }
 
 // ── Library ───────────────────────────────────────────────────────────────────
