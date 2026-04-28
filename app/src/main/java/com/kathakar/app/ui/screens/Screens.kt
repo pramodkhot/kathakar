@@ -211,7 +211,7 @@ fun StoryDetailScreen(storyId: String, user: User, onBack: () -> Unit,
     val state       by vm.state.collectAsState()
     val followState by followVm.state.collectAsState()
     LaunchedEffect(storyId) { vm.load(storyId, user.userId) }
-    LaunchedEffect(authorId) { if (!isAuthor) followVm.check(user.userId, authorId) }
+    LaunchedEffect(state.story) { state.story?.authorId?.let { aid -> if (aid != user.userId) followVm.check(user.userId, aid) } }
     LaunchedEffect(state.justUnlockedId) { state.justUnlockedId?.let { onReadEpisode(it, state.story?.authorId ?: ""); vm.clearJustUnlocked() } }
     Scaffold(topBar = { TopAppBar(title = { Text(text = state.story?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
@@ -687,7 +687,7 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
     val isAuthor     = user.userId == authorId
 
     LaunchedEffect(poemId) { vm.load(poemId, user.userId) }
-    LaunchedEffect(state.story?.authorId) { if (!isAuthor) followVm.check(user.userId, authorId) }
+    LaunchedEffect(authorId) { if (!isAuthor) followVm.check(user.userId, authorId) }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); vm.clearMessage() } }
     LaunchedEffect(state.error)   { state.error?.let   { snackbar.showSnackbar(it); vm.clearError() } }
 
