@@ -211,7 +211,7 @@ fun StoryDetailScreen(storyId: String, user: User, onBack: () -> Unit,
     val state       by vm.state.collectAsState()
     val followState by followVm.state.collectAsState()
     LaunchedEffect(storyId) { vm.load(storyId, user.userId) }
-    LaunchedEffect(state.story?.authorId) { state.story?.authorId?.let { if (it != user.userId) followVm.check(user.userId, it) } }
+    LaunchedEffect(authorId) { if (!isAuthor) followVm.check(user.userId, authorId) }
     LaunchedEffect(state.justUnlockedId) { state.justUnlockedId?.let { onReadEpisode(it, state.story?.authorId ?: ""); vm.clearJustUnlocked() } }
     Scaffold(topBar = { TopAppBar(title = { Text(text = state.story?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
