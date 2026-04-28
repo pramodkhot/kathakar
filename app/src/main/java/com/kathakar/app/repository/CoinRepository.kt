@@ -39,8 +39,8 @@ class CoinRepository @Inject constructor(private val db: FirebaseFirestore) {
                 t.set(unlockRef, UnlockedEpisode(userId, episode.episodeId, episode.storyId, cost, Timestamp.now()))
                 val unlockNote = "Unlocked: " + episode.title
                 val earnNote   = "Earned: "   + episode.title
-                t.set(txnRef,  CoinTransaction(txnRef.id,  userId,   CoinTxnType.EPISODE_UNLOCK,  -cost,   unlockNote, episode.episodeId, Timestamp.now()))
-                t.set(aTxnRef, CoinTransaction(aTxnRef.id, authorId, CoinTxnType.AUTHOR_EARNING,   credit, earnNote,   episode.episodeId, Timestamp.now()))
+                t.set(txnRef,  CoinTransaction(txnRef.id,  userId,   CoinTxnType.EPISODE_UNLOCK,  -cost,   unlockNote, episode.episodeId, "", Timestamp.now()))
+                t.set(aTxnRef, CoinTransaction(aTxnRef.id, authorId, CoinTxnType.AUTHOR_EARNING,   credit, earnNote,   episode.episodeId, "", Timestamp.now()))
             }.await()
             Resource.Success(newBalance)
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Unlock failed") }
