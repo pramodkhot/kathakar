@@ -10,34 +10,33 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// ── Firestore collection names ─────────────────────────────────────────────────
-// Add POEMS and POEM_LIKES to FirestoreCollections util manually:
-// const val POEMS      = "poems"
-// const val POEM_LIKES = "poem_likes"
-
 @Singleton
 class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
 
     private val storiesCol  get() = db.collection(FirestoreCollections.STORIES)
     private val episodesCol get() = db.collection(FirestoreCollections.EPISODES)
 
+    // Stories — filter in Firestore, sort+paginate in memory — NO composite index needed
     suspend fun getStories(
         category: String? = null,
         language: String? = null,
         lastVisible: DocumentSnapshot? = null
     ): Resource<Pair<List<Story>, DocumentSnapshot?>> {
         return try {
-            var q: Query = storiesCol
-                .whereEqualTo("status", "PUBLISHED")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(20)
+            var q: Query = storiesCol.whereEqualTo("status", "PUBLISHED")
             category?.let { q = q.whereEqualTo("category", it) }
             language?.let  { q = q.whereEqualTo("language", it) }
-            lastVisible?.let { q = q.startAfter(it) }
-            val snap = q.get().await()
-            val list = snap.toObjects(Story::class.java)
-            val next = if (snap.size() >= 20) snap.documents.lastOrNull() else null
-            Resource.Success(list to next)
+            val snap   = q.get().await()
+            val sorted = snap.toObjects(Story::class.java)
+                .sortedByDescending { it.createdAt?.seconds ?: 0 }
+            val startIdx = if (lastVisible != null) {
+                val idx = sorted.indexOfFirst { it.storyId == lastVisible.id }
+                if (idx >= 0) idx + 1 else 0
+            } else 0
+            val page       = sorted.drop(startIdx).take(20)
+            val nextCursor = if (page.size >= 20 && startIdx + 20 < sorted.size)
+                snap.documents.find { it.id == page.lastOrNull()?.storyId } else null
+            Resource.Success(page to nextCursor)
         } catch (e: Exception) { Resource.Error("Failed to load stories: " + e.localizedMessage) }
     }
 
@@ -46,8 +45,9 @@ class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
             val token = query.lowercase().trim().split(" ")
                 .firstOrNull { it.length >= 2 } ?: return Resource.Success(emptyList())
             val snap = storiesCol.whereEqualTo("status", "PUBLISHED")
-                .whereArrayContains("searchTokens", token).limit(20).get().await()
-            Resource.Success(snap.toObjects(Story::class.java))
+                .whereArrayContains("searchTokens", token).get().await()
+            Resource.Success(snap.toObjects(Story::class.java)
+                .sortedByDescending { it.createdAt?.seconds ?: 0 })
         } catch (e: Exception) { Resource.Error("Search failed: " + e.localizedMessage) }
     }
 
@@ -59,6 +59,7 @@ class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Failed") }
     }
 
+    // Episodes — filter+sort in memory — no composite index needed
     suspend fun getEpisodes(storyId: String): Resource<List<Episode>> {
         return try {
             val snap = episodesCol.whereEqualTo("storyId", storyId).get().await()
@@ -83,6 +84,7 @@ class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Failed") }
     }
 
+    // Author stories — no composite index needed
     suspend fun getAuthorStories(authorId: String): Resource<List<Story>> {
         return try {
             val snap = storiesCol.whereEqualTo("authorId", authorId).get().await()
@@ -171,14 +173,14 @@ class StoryRepository @Inject constructor(private val db: FirebaseFirestore) {
     }
 }
 
-// ── Poem Repository ───────────────────────────────────────────────────────────
+// ── Poem Repository ────────────────────────────────────────────────────────────
 @Singleton
 class PoemRepository @Inject constructor(private val db: FirebaseFirestore) {
 
-    private val poemsCol    get() = db.collection("poems")
-    private val likesCol    get() = db.collection("poem_likes")
+    private val poemsCol get() = db.collection(FirestoreCollections.POEMS)
+    private val likesCol get() = db.collection(FirestoreCollections.POEM_LIKES)
 
-    // All poems free to read — no locking ever
+    // Poems — filter in Firestore, sort+paginate in memory — NO composite index needed
     suspend fun getPoems(
         format: String? = null,
         language: String? = null,
@@ -186,18 +188,21 @@ class PoemRepository @Inject constructor(private val db: FirebaseFirestore) {
         lastVisible: DocumentSnapshot? = null
     ): Resource<Pair<List<Poem>, DocumentSnapshot?>> {
         return try {
-            var q: Query = poemsCol
-                .whereEqualTo("status", "PUBLISHED")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(30)
+            var q: Query = poemsCol.whereEqualTo("status", "PUBLISHED")
             format?.let   { q = q.whereEqualTo("format", it) }
             language?.let { q = q.whereEqualTo("language", it) }
             mood?.let     { q = q.whereEqualTo("mood", it) }
-            lastVisible?.let { q = q.startAfter(it) }
-            val snap = q.get().await()
-            val list = snap.toObjects(Poem::class.java)
-            val next = if (snap.size() >= 30) snap.documents.lastOrNull() else null
-            Resource.Success(list to next)
+            val snap   = q.get().await()
+            val sorted = snap.toObjects(Poem::class.java)
+                .sortedByDescending { it.createdAt?.seconds ?: 0 }
+            val startIdx = if (lastVisible != null) {
+                val idx = sorted.indexOfFirst { it.poemId == lastVisible.id }
+                if (idx >= 0) idx + 1 else 0
+            } else 0
+            val page       = sorted.drop(startIdx).take(30)
+            val nextCursor = if (page.size >= 30 && startIdx + 30 < sorted.size)
+                snap.documents.find { it.id == page.lastOrNull()?.poemId } else null
+            Resource.Success(page to nextCursor)
         } catch (e: Exception) { Resource.Error("Failed to load poems: " + e.localizedMessage) }
     }
 
@@ -206,8 +211,9 @@ class PoemRepository @Inject constructor(private val db: FirebaseFirestore) {
             val token = query.lowercase().trim().split(" ")
                 .firstOrNull { it.length >= 2 } ?: return Resource.Success(emptyList())
             val snap = poemsCol.whereEqualTo("status", "PUBLISHED")
-                .whereArrayContains("searchTokens", token).limit(20).get().await()
-            Resource.Success(snap.toObjects(Poem::class.java))
+                .whereArrayContains("searchTokens", token).get().await()
+            Resource.Success(snap.toObjects(Poem::class.java)
+                .sortedByDescending { it.createdAt?.seconds ?: 0 })
         } catch (e: Exception) { Resource.Error("Search failed: " + e.localizedMessage) }
     }
 
@@ -233,19 +239,19 @@ class PoemRepository @Inject constructor(private val db: FirebaseFirestore) {
                       else poemsCol.document(poem.poemId)
             val tokens = generateSearchTokens(poem.title, poem.authorName)
             val data = HashMap<String, Any>()
-            data["poemId"]      = ref.id
-            data["title"]       = poem.title
-            data["content"]     = poem.content
-            data["authorId"]    = poem.authorId
-            data["authorName"]  = poem.authorName
-            data["format"]      = poem.format
-            data["language"]    = poem.language
-            data["mood"]        = poem.mood
-            data["searchTokens"]= tokens
-            data["likesCount"]  = poem.likesCount
-            data["tipsCount"]   = poem.tipsCount
+            data["poemId"]         = ref.id
+            data["title"]          = poem.title
+            data["content"]        = poem.content
+            data["authorId"]       = poem.authorId
+            data["authorName"]     = poem.authorName
+            data["format"]         = poem.format
+            data["language"]       = poem.language
+            data["mood"]           = poem.mood
+            data["searchTokens"]   = tokens
+            data["likesCount"]     = poem.likesCount
+            data["tipsCount"]      = poem.tipsCount
             data["totalTipsCoins"] = poem.totalTipsCoins
-            data["status"]      = "PUBLISHED"  // poems always published immediately
+            data["status"]         = "PUBLISHED"
             if (poem.createdAt == null) data["createdAt"] = Timestamp.now()
             else data["createdAt"] = poem.createdAt
             ref.set(data).await()
@@ -280,7 +286,6 @@ class PoemRepository @Inject constructor(private val db: FirebaseFirestore) {
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Failed") }
     }
 
-    // Like / unlike toggle
     suspend fun toggleLike(userId: String, poemId: String): Resource<Boolean> {
         val likeDocId = userId + "_" + poemId
         val likeRef   = likesCol.document(likeDocId)
@@ -308,13 +313,8 @@ class PoemRepository @Inject constructor(private val db: FirebaseFirestore) {
         catch (e: Exception) { false }
     }
 
-    // Tip the poet — reader sends 1-5 coins to poet
-    suspend fun tipPoet(
-        fromUserId: String,
-        toUserId: String,
-        poem: Poem,
-        coins: Int
-    ): Resource<Int> {
+    suspend fun tipPoet(fromUserId: String, toUserId: String,
+                        poem: Poem, coins: Int): Resource<Int> {
         val safeCoins = coins.coerceIn(MvpConfig.POEM_TIP_MIN, MvpConfig.POEM_TIP_MAX)
         val fromRef = db.collection(FirestoreCollections.USERS).document(fromUserId)
         val toRef   = db.collection(FirestoreCollections.USERS).document(toUserId)
@@ -333,18 +333,19 @@ class PoemRepository @Inject constructor(private val db: FirebaseFirestore) {
                 t.update(toRef,   "totalCoinsEarned", FieldValue.increment(safeCoins.toLong()))
                 t.update(poemRef, "tipsCount",        FieldValue.increment(1))
                 t.update(poemRef, "totalTipsCoins",   FieldValue.increment(safeCoins.toLong()))
-                val tipNote    = "Tipped " + safeCoins + " coins on: " + poem.title
-                val receiveNote= "Received tip for: " + poem.title
+                val tipNote     = "Tipped " + safeCoins + " coins on: " + poem.title
+                val receiveNote = "Received tip for: " + poem.title
                 t.set(txnFrom, CoinTransaction(txnFrom.id, fromUserId, CoinTxnType.POEM_TIP,
-                    -safeCoins, tipNote, relatedPoemId = poem.poemId, createdAt = Timestamp.now()))
+                    -safeCoins, tipNote, "", poem.poemId, Timestamp.now()))
                 t.set(txnTo, CoinTransaction(txnTo.id, toUserId, CoinTxnType.POEM_TIP_RECEIVED,
-                    safeCoins, receiveNote, relatedPoemId = poem.poemId, createdAt = Timestamp.now()))
+                    safeCoins, receiveNote, "", poem.poemId, Timestamp.now()))
             }.await()
             Resource.Success(newBalance)
         } catch (e: Exception) { Resource.Error(e.localizedMessage ?: "Tip failed") }
     }
 }
 
+// ── Library Repository ─────────────────────────────────────────────────────────
 @Singleton
 class LibraryRepository @Inject constructor(private val db: FirebaseFirestore) {
     private val libCol get() = db.collection(FirestoreCollections.LIBRARY)
