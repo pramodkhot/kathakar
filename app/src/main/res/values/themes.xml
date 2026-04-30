@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Kathakar" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        Parent changed from android:Theme.Material.Light.NoActionBar
+        to Theme.MaterialComponents.DayNight.NoActionBar
+
+        This is required because MainActivity now extends AppCompatActivity
+        (needed for per-app language switching).
+        AppCompatActivity crashes if the theme parent is not AppCompat-based.
+    -->
+    <style name="Theme.Kathakar" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
 </resources>
