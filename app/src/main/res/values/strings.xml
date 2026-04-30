@@ -127,13 +127,5 @@
     <string name="new_story_title">New Story</string>
     <string name="send_tip">Send %1$d coin</string>
     <string name="send_tip_plural">Send %1$d coins</string>
-    <string name="tips_earned">Tips: %1$d coins</string>
-    <string name="balance_coins">Balance: %1$d coins</string>
-    <string name="your_balance">Your balance: %1$d coins</string>
-    <string name="reading_chapter">Chapter %1$d</string>
-    <string name="editing_chapter_of">Editing Chapter %1$d of your story</string>
-    <string name="ch1_free_info">Ch.1 free — others cost %1$d coins</string>
-    <string name="free_coins_signup">You will get %1$d free coins on signup!</string>
-    <string name="total_earned">Total earned: %1$d coins</string>
 
 </resources>
