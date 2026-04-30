@@ -28,7 +28,10 @@ data class User(
     val storiesCount: Int = 0,
     val poemsCount: Int = 0,
     val createdAt: Timestamp? = null,
-    val isBanned: Boolean = false
+    val isBanned: Boolean = false,
+    // Content language preference — list of language codes e.g. ["hi", "mr"]
+    // Empty = no preference, show all languages
+    val preferredLanguages: List<String> = emptyList()
 ) {
     val initials: String get() = name.split(" ").filter { it.isNotBlank() }
         .take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "K" }
