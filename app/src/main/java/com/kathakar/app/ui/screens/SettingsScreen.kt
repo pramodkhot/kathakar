@@ -104,7 +104,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                         modifier = Modifier.size(42.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Language, null,
+                            Icon(Icons.Default.Settings, null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(22.dp))
                         }
@@ -131,7 +131,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                         )
                     }
                     Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Default.ChevronRight, null,
+                    Icon(Icons.Default.ArrowForward, null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp))
                 }
@@ -180,7 +180,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     SettingsInfoRow(
-                        icon = Icons.Default.Language,
+                        icon = Icons.Default.Place,
                         label = "Languages",
                         value = "9 Indian languages"
                     )
