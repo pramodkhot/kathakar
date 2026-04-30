@@ -6,6 +6,8 @@ import androidx.navigation.*
 import androidx.navigation.compose.*
 import com.kathakar.app.ui.screens.*
 import com.kathakar.app.viewmodel.AuthViewModel
+import com.kathakar.app.viewmodel.HomeViewModel
+import com.kathakar.app.viewmodel.PoemsViewModel
 
 sealed class Screen(val route: String) {
     object Login          : Screen("login")
@@ -20,6 +22,7 @@ sealed class Screen(val route: String) {
     object Subscribe      : Screen("stub/subscribe")
     object AiWrite        : Screen("stub/ai")
     object Settings       : Screen("settings")
+    object LangOnboarding : Screen("lang_onboarding")
     object CreateEpisode  : Screen("write/episode/{storyId}/{chNum}") {
         fun go(storyId: String, ch: Int) = "write/episode/$storyId/$ch"
     }
@@ -56,21 +59,48 @@ fun KathakarNavGraph(navController: NavHostController) {
 
         composable(Screen.Login.route) {
             LoginScreen(viewModel = authVM, onSuccess = {
-                navController.navigate(Screen.Home.route) {
+                val user = authVM.state.value.user
+                // New user with no language preference → show onboarding
+                val dest = if (user != null && user.preferredLanguages.isEmpty())
+                    Screen.LangOnboarding.route else Screen.Home.route
+                navController.navigate(dest) {
                     popUpTo(Screen.Login.route) { inclusive = true }
                 }
             })
         }
 
+        composable(Screen.LangOnboarding.route) {
+            val user = auth.user ?: return@composable
+            var isSaving by remember { mutableStateOf(false) }
+            LanguageOnboardingScreen(
+                isSaving = isSaving,
+                onDone = { langs ->
+                    isSaving = true
+                    // Save to Firestore via AuthViewModel, then go to Home
+                    authVM.savePreferredLanguages(user.userId, langs) {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.LangOnboarding.route) { inclusive = true }
+                        }
+                    }
+                }
+            )
+        }
+
         composable(Screen.Home.route) {
             val user = auth.user ?: return@composable
+            val homeVm: HomeViewModel = hiltViewModel()
+            // Approach B — feed auto-prioritises user's preferred languages
+            LaunchedEffect(user.preferredLanguages) {
+                homeVm.setPreferredLanguages(user.preferredLanguages)
+            }
             HomeScreen(user = user,
                 onStoryClick   = { navController.navigate(Screen.StoryDetail.go(it)) },
                 onWriteClick   = { navController.switchTab(Screen.Write.route) },
                 onLibraryClick = { navController.switchTab(Screen.Library.route) },
                 onProfileClick = { navController.switchTab(Screen.Profile.route) },
                 onPoemsClick   = { navController.switchTab(Screen.Poems.route) },
-                onSettingsClick = { navController.navigate(Screen.Settings.route) })
+                onSettingsClick = { navController.navigate(Screen.Settings.route) },
+                vm = homeVm)
         }
 
         composable(Screen.StoryDetail.route,
@@ -150,6 +180,10 @@ fun KathakarNavGraph(navController: NavHostController) {
         // ── POEMS TAB ──────────────────────────────────────────────────────────
         composable(Screen.Poems.route) {
             val user = auth.user ?: return@composable
+            val poemsVm: PoemsViewModel = hiltViewModel()
+            LaunchedEffect(user.preferredLanguages) {
+                poemsVm.setPreferredLanguages(user.preferredLanguages)
+            }
             PoemsScreen(user = user,
                 onPoemClick    = { poemId, authorId ->
                     navController.navigate(Screen.PoemDetail.go(poemId, authorId))
@@ -157,7 +191,8 @@ fun KathakarNavGraph(navController: NavHostController) {
                 onReadClick    = { navController.switchTab(Screen.Home.route) },
                 onWriteClick   = { navController.switchTab(Screen.Write.route) },
                 onLibraryClick = { navController.switchTab(Screen.Library.route) },
-                onProfileClick = { navController.switchTab(Screen.Profile.route) })
+                onProfileClick = { navController.switchTab(Screen.Profile.route) },
+                vm = poemsVm)
         }
 
         composable(Screen.PoemDetail.route, listOf(
@@ -209,7 +244,14 @@ fun KathakarNavGraph(navController: NavHostController) {
             ComingSoonScreen("AI Writing Assistant", "AI features coming soon.", onBack = { navController.popBackStack() })
         }
         composable(Screen.Settings.route) {
-            SettingsScreen(onBack = { navController.popBackStack() })
+            val user = auth.user
+            SettingsScreen(
+                user = user,
+                onBack = { navController.popBackStack() },
+                onSaveContentLanguages = { langs ->
+                    user?.let { authVM.savePreferredLanguages(it.userId, langs) {} }
+                }
+            )
         }
     }
 }
