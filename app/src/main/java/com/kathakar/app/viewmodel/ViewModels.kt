@@ -35,6 +35,13 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
         doAuth { repo.register(n, e, p) }
     }
     fun signOut() { repo.signOut(); _s.value = AuthUiState() }
+
+    fun savePreferredLanguages(userId: String, langs: List<String>, onDone: () -> Unit) {
+        viewModelScope.launch {
+            repo.savePreferredLanguages(userId, langs)
+            onDone()
+        }
+    }
     fun clearError() = _s.update { it.copy(error = null) }
     private fun doAuth(block: suspend () -> Resource<User>) = viewModelScope.launch {
         _s.update { it.copy(isLoading = true, error = null) }
@@ -59,21 +66,57 @@ class HomeViewModel @Inject constructor(private val storyRepo: StoryRepository) 
     private val _s = MutableStateFlow(HomeUiState()); val state = _s.asStateFlow()
     val categories = KathakarMeta.CATEGORIES; val languages = KathakarMeta.LANGUAGES
     private var cursor: DocumentSnapshot? = null; private var searchJob: Job? = null
+    private var preferredLanguages: List<String> = emptyList()
+
+    fun setPreferredLanguages(langs: List<String>) {
+        if (langs == preferredLanguages) return
+        preferredLanguages = langs
+        load(reset = true)
+    }
+
     init { load() }
+
     fun load(reset: Boolean = true) {
         if (!reset && (_s.value.isLoadingMore || !_s.value.hasMore)) return
         if (reset) cursor = null
         viewModelScope.launch {
-            _s.update { if (reset) it.copy(isLoading = true, stories = emptyList(), error = null) else it.copy(isLoadingMore = true) }
+            _s.update { if (reset) it.copy(isLoading = true, stories = emptyList(), error = null)
+                        else it.copy(isLoadingMore = true) }
             val s = _s.value
-            when (val r = storyRepo.getStories(s.selectedCategory, s.selectedLanguage, cursor)) {
-                is Resource.Success -> { val (list, next) = r.data; cursor = next
-                    _s.update { it.copy(stories = if (reset) list else it.stories + list, hasMore = next != null, isLoading = false, isLoadingMore = false) } }
-                is Resource.Error -> _s.update { it.copy(isLoading = false, isLoadingMore = false, error = r.message) }
-                else -> Unit
+            // Priority feed when preferred languages set and no manual filter active
+            if (preferredLanguages.isNotEmpty() && s.selectedLanguage == null) {
+                loadPrioritized(s.selectedCategory)
+            } else {
+                when (val r = storyRepo.getStories(s.selectedCategory, s.selectedLanguage, cursor)) {
+                    is Resource.Success -> { val (list, next) = r.data; cursor = next
+                        _s.update { it.copy(stories = if (reset) list else it.stories + list,
+                            hasMore = next != null, isLoading = false, isLoadingMore = false) } }
+                    is Resource.Error -> _s.update { it.copy(isLoading = false, isLoadingMore = false, error = r.message) }
+                    else -> Unit
+                }
             }
         }
     }
+
+    private suspend fun loadPrioritized(category: String?) {
+        try {
+            val r = storyRepo.getStories(category, null, null)
+            if (r is Resource.Success) {
+                val all       = r.data.first
+                val preferred = all.filter { it.language in preferredLanguages }
+                val others    = all.filter { it.language !in preferredLanguages }
+                val combined  = preferred + others
+                _s.update { it.copy(stories = combined.take(20), hasMore = combined.size > 20,
+                    isLoading = false, isLoadingMore = false) }
+            } else {
+                _s.update { it.copy(isLoading = false,
+                    error = (r as? Resource.Error)?.message) }
+            }
+        } catch (e: Exception) {
+            _s.update { it.copy(isLoading = false, error = e.localizedMessage) }
+        }
+    }
+
     fun onSearch(q: String) {
         _s.update { it.copy(searchQuery = q) }; searchJob?.cancel()
         if (q.isBlank()) { load(); return }
@@ -266,21 +309,52 @@ class PoemsViewModel @Inject constructor(private val poemRepo: PoemRepository) :
     private var cursor: DocumentSnapshot? = null
     private var searchJob: Job? = null
 
+    private var preferredLanguages: List<String> = emptyList()
+
+    fun setPreferredLanguages(langs: List<String>) {
+        if (langs == preferredLanguages) return
+        preferredLanguages = langs
+        load(reset = true)
+    }
+
     init { load() }
 
     fun load(reset: Boolean = true) {
         if (!reset && (_s.value.isLoadingMore || !_s.value.hasMore)) return
         if (reset) cursor = null
         viewModelScope.launch {
-            _s.update { if (reset) it.copy(isLoading = true, poems = emptyList(), error = null) else it.copy(isLoadingMore = true) }
+            _s.update { if (reset) it.copy(isLoading = true, poems = emptyList(), error = null)
+                        else it.copy(isLoadingMore = true) }
             val s = _s.value
-            when (val r = poemRepo.getPoems(s.selectedFormat, s.selectedLanguage, s.selectedMood, cursor)) {
-                is Resource.Success -> { val (list, next) = r.data; cursor = next
-                    _s.update { it.copy(poems = if (reset) list else it.poems + list,
-                        hasMore = next != null, isLoading = false, isLoadingMore = false) } }
-                is Resource.Error -> _s.update { it.copy(isLoading = false, isLoadingMore = false, error = r.message) }
-                else -> Unit
+            if (preferredLanguages.isNotEmpty() && s.selectedLanguage == null) {
+                loadPrioritized(s.selectedFormat, s.selectedMood)
+            } else {
+                when (val r = poemRepo.getPoems(s.selectedFormat, s.selectedLanguage, s.selectedMood, cursor)) {
+                    is Resource.Success -> { val (list, next) = r.data; cursor = next
+                        _s.update { it.copy(poems = if (reset) list else it.poems + list,
+                            hasMore = next != null, isLoading = false, isLoadingMore = false) } }
+                    is Resource.Error -> _s.update { it.copy(isLoading = false, isLoadingMore = false, error = r.message) }
+                    else -> Unit
+                }
             }
+        }
+    }
+
+    private suspend fun loadPrioritized(format: String?, mood: String?) {
+        try {
+            val r = poemRepo.getPoems(format, null, mood, null)
+            if (r is Resource.Success) {
+                val all       = r.data.first
+                val preferred = all.filter { it.language in preferredLanguages }
+                val others    = all.filter { it.language !in preferredLanguages }
+                val combined  = preferred + others
+                _s.update { it.copy(poems = combined.take(30), hasMore = combined.size > 30,
+                    isLoading = false, isLoadingMore = false) }
+            } else {
+                _s.update { it.copy(isLoading = false, error = (r as? Resource.Error)?.message) }
+            }
+        } catch (e: Exception) {
+            _s.update { it.copy(isLoading = false, error = e.localizedMessage) }
         }
     }
 
