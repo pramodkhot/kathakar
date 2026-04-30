@@ -2,6 +2,7 @@ package com.kathakar.app.ui.screens
 
 import android.app.Activity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -54,11 +55,23 @@ fun applyLanguage(code: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(
+    user: com.kathakar.app.domain.model.User? = null,
+    onBack: () -> Unit,
+    onSaveContentLanguages: (List<String>) -> Unit = {}
+) {
     val context = LocalContext.current
-    var currentLangCode by remember { mutableStateOf(getCurrentLanguageCode()) }
+    var currentLangCode  by remember { mutableStateOf(getCurrentLanguageCode()) }
     var showLangDialog   by remember { mutableStateOf(false) }
     var pendingLangCode  by remember { mutableStateOf(currentLangCode) }
+    var showContentLangDialog by remember { mutableStateOf(false) }
+
+    // Content language preference — initialise from user profile
+    val contentLangs = remember(user?.preferredLanguages) {
+        mutableStateListOf<String>().also {
+            it.addAll(user?.preferredLanguages ?: listOf("en"))
+        }
+    }
 
     val currentLang = SUPPORTED_LANGUAGES.find { it.code == currentLangCode }
         ?: SUPPORTED_LANGUAGES[0]
@@ -85,7 +98,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-            // ── Language Section ─────────────────────────────────────────────
+            // ── UI Language Section ──────────────────────────────────────────
             SettingsSectionHeader(text = stringResource(R.string.language_settings))
 
             Card(
@@ -93,16 +106,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Globe icon
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                Row(modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer,
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.size(42.dp)
-                    ) {
+                        modifier = Modifier.size(42.dp)) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(Icons.Default.Settings, null,
                                 tint = MaterialTheme.colorScheme.primary,
@@ -117,18 +125,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Spacer(Modifier.width(8.dp))
-                    // Current language badge
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = currentLang.nativeName,
-                            fontSize = 12.sp,
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(8.dp)) {
+                        Text(text = currentLang.nativeName, fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
                     }
                     Spacer(Modifier.width(4.dp))
                     Icon(Icons.Default.ArrowForward, null,
@@ -137,21 +139,82 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            // Language change note
-            Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(10.dp)
-            ) {
+            Surface(color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(10.dp)) {
                 Row(modifier = Modifier.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, null,
-                        modifier = Modifier.size(16.dp),
+                    Icon(Icons.Default.Info, null, modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSecondaryContainer)
                     Spacer(Modifier.width(8.dp))
                     Text(text = stringResource(R.string.language_change_note),
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer,
                         lineHeight = 18.sp)
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            // ── Content Language Section (Approach C) ────────────────────────
+            SettingsSectionHeader(text = stringResource(R.string.content_language_title))
+
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { showContentLangDialog = true },
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.size(42.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Star, null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(22.dp))
+                        }
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = stringResource(R.string.content_language_title),
+                            fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                        Text(text = stringResource(R.string.content_language_sub),
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    // Show badge count
+                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = RoundedCornerShape(8.dp)) {
+                        Text(text = "${contentLangs.size} selected",
+                            fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Default.ArrowForward, null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp))
+                }
+            }
+
+            // Show selected content languages as chips
+            if (contentLangs.isNotEmpty()) {
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    contentLangs.forEach { code ->
+                        val lang = SUPPORTED_LANGUAGES.find { it.code == code }
+                        if (lang != null) {
+                            Surface(color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(20.dp)) {
+                                Text(text = lang.nativeName, fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                            }
+                        }
+                    }
                 }
             }
 
@@ -159,39 +222,24 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             // ── About Section ─────────────────────────────────────────────────
             SettingsSectionHeader(text = stringResource(R.string.about_title))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceVariant)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SettingsInfoRow(
-                        icon = Icons.Default.Info,
-                        label = stringResource(R.string.app_name),
-                        value = "KathaKar"
-                    )
+                    SettingsInfoRow(icon = Icons.Default.Info,
+                        label = stringResource(R.string.app_name), value = "KathaKar")
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    SettingsInfoRow(
-                        icon = Icons.Default.Star,
-                        label = "Version",
-                        value = "1.0.0"
-                    )
+                    SettingsInfoRow(icon = Icons.Default.Star, label = "Version", value = "1.0.0")
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    SettingsInfoRow(
-                        icon = Icons.Default.Place,
-                        label = "Languages",
-                        value = "9 Indian languages"
-                    )
+                    SettingsInfoRow(icon = Icons.Default.Place, label = "Languages",
+                        value = "9 Indian languages")
                 }
             }
-
             Spacer(Modifier.height(32.dp))
         }
     }
 
-    // ── Language Picker Dialog ────────────────────────────────────────────────
+    // ── UI Language Dialog ────────────────────────────────────────────────────
     if (showLangDialog) {
         AlertDialog(
             onDismissRequest = { showLangDialog = false },
@@ -201,39 +249,25 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     SUPPORTED_LANGUAGES.forEach { lang ->
                         val isSelected = lang.code == pendingLangCode
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { pendingLangCode = lang.code },
+                        Surface(modifier = Modifier.fillMaxWidth().clickable { pendingLangCode = lang.code },
                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
                                     else MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp, 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = isSelected,
+                            shape = RoundedCornerShape(10.dp)) {
+                            Row(modifier = Modifier.padding(12.dp, 10.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = isSelected,
                                     onClick = { pendingLangCode = lang.code },
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                    modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = lang.nativeName,
-                                        fontWeight = if (isSelected) FontWeight.SemiBold
-                                                     else FontWeight.Normal,
+                                    Text(text = lang.nativeName,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                         fontSize = 15.sp,
                                         color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                                else MaterialTheme.colorScheme.onSurface
-                                    )
+                                                else MaterialTheme.colorScheme.onSurface)
                                     if (lang.code != "en") {
-                                        Text(
-                                            text = lang.englishName,
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        Text(text = lang.englishName, fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                                 if (isSelected) {
@@ -248,25 +282,74 @@ fun SettingsScreen(onBack: () -> Unit) {
             },
             confirmButton = {
                 Button(onClick = {
-                    showLangDialog  = false
-                    currentLangCode = pendingLangCode
-                    // Set the locale first, then recreate after a short delay
-                    // so AppCompatDelegate has time to apply the change
+                    showLangDialog = false; currentLangCode = pendingLangCode
                     applyLanguage(pendingLangCode)
-                    (context as? Activity)?.let { activity ->
-                        activity.window.decorView.post {
-                            activity.recreate()
-                        }
-                    }
-                }) {
-                    Text(text = stringResource(R.string.apply))
-                }
+                    (context as? android.app.Activity)?.let { a -> a.window.decorView.post { a.recreate() } }
+                }) { Text(text = stringResource(R.string.apply)) }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    pendingLangCode = currentLangCode
-                    showLangDialog  = false
-                }) {
+                TextButton(onClick = { pendingLangCode = currentLangCode; showLangDialog = false }) {
+                    Text(text = stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    // ── Content Language Multi-Select Dialog (Approach C) ────────────────────
+    if (showContentLangDialog) {
+        val tempSelected = remember { mutableStateListOf<String>().also { it.addAll(contentLangs) } }
+        AlertDialog(
+            onDismissRequest = { showContentLangDialog = false },
+            title = { Text(text = stringResource(R.string.content_language_title),
+                fontWeight = FontWeight.Medium) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = stringResource(R.string.content_language_sub),
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp))
+                    SUPPORTED_LANGUAGES.forEach { lang ->
+                        val isChecked = lang.code in tempSelected
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                if (isChecked) {
+                                    if (tempSelected.size > 1) tempSelected.remove(lang.code)
+                                } else { tempSelected.add(lang.code) }
+                            },
+                            color = if (isChecked) MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp, 8.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = isChecked,
+                                    onCheckedChange = { checked ->
+                                        if (checked) tempSelected.add(lang.code)
+                                        else if (tempSelected.size > 1) tempSelected.remove(lang.code)
+                                    })
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(text = lang.nativeName, fontSize = 15.sp,
+                                        fontWeight = if (isChecked) FontWeight.SemiBold else FontWeight.Normal)
+                                    if (lang.code != "en") {
+                                        Text(text = lang.englishName, fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    contentLangs.clear()
+                    contentLangs.addAll(tempSelected)
+                    showContentLangDialog = false
+                    onSaveContentLanguages(tempSelected.toList())
+                }) { Text(text = stringResource(R.string.apply)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showContentLangDialog = false }) {
                     Text(text = stringResource(R.string.cancel))
                 }
             }
