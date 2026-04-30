@@ -3,17 +3,24 @@ package com.kathakar.app.util
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import org.apache.poi.xwpf.usermodel.XWPFDocument
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
 import java.io.InputStream
+import java.util.zip.ZipInputStream
 
+/**
+ * FileUtils — reads .docx and .txt files without Apache POI.
+ *
+ * A .docx file is just a ZIP archive. Inside it is word/document.xml
+ * which contains the full text wrapped in <w:t> tags.
+ * We unzip the file in memory, find document.xml, parse the XML,
+ * and extract all <w:t> text nodes — no external library needed.
+ * Works on Android API 21+.
+ */
 object FileUtils {
 
-    const val MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024L  // 2 MB
+    const val MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024L   // 2 MB
     const val MAX_WORD_COUNT      = 10_000
-    val SUPPORTED_MIME_TYPES      = arrayOf(
-        "text/plain",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
 
     data class FileReadResult(
         val text: String = "",
@@ -24,20 +31,21 @@ object FileUtils {
         val isSuccess get() = error == null && text.isNotBlank()
     }
 
-    // ── Main entry point ──────────────────────────────────────────────────────
+    // ── Public entry point ────────────────────────────────────────────────────
     fun readFile(context: Context, uri: Uri): FileReadResult {
         return try {
             val fileName = getFileName(context, uri)
             val fileSize = getFileSize(context, uri)
 
-            // Check file size first
             if (fileSize > MAX_FILE_SIZE_BYTES) {
-                return FileReadResult(error = "File too large. Maximum size is 2 MB. " +
+                return FileReadResult(error =
+                    "File too large. Maximum allowed size is 2 MB.\n" +
                     "Please split your chapter into smaller parts.")
             }
 
             val mimeType = context.contentResolver.getType(uri) ?: ""
-            val text = when {
+
+            val rawText = when {
                 mimeType == "text/plain" ||
                 fileName.endsWith(".txt", ignoreCase = true) ->
                     readTxtFile(context, uri)
@@ -47,21 +55,23 @@ object FileUtils {
                     readDocxFile(context, uri)
 
                 else -> return FileReadResult(
-                    error = "Unsupported file type. Please use .docx or .txt files only.")
+                    error = "Unsupported file type.\n" +
+                        "Please use .docx (Word) or .txt files only.")
             }
 
-            val cleaned   = cleanText(text)
+            val cleaned   = cleanText(rawText)
             val wordCount = countWords(cleaned)
+
+            if (cleaned.isBlank()) {
+                return FileReadResult(
+                    error = "File appears to be empty. Please check the file and try again.")
+            }
 
             if (wordCount > MAX_WORD_COUNT) {
                 return FileReadResult(
-                    error = "Chapter is too long ($wordCount words). " +
-                        "Maximum is $MAX_WORD_COUNT words per chapter. " +
+                    error = "Chapter is too long ($wordCount words).\n" +
+                        "Maximum is $MAX_WORD_COUNT words per chapter.\n" +
                         "Please divide your story into smaller chapters.")
-            }
-
-            if (cleaned.isBlank()) {
-                return FileReadResult(error = "File appears to be empty. Please check the file and try again.")
             }
 
             FileReadResult(text = cleaned, wordCount = wordCount, fileName = fileName)
@@ -78,39 +88,101 @@ object FileUtils {
         return stream.use { it.bufferedReader(Charsets.UTF_8).readText() }
     }
 
-    // ── .docx reader using Apache POI ─────────────────────────────────────────
+    // ── .docx reader — pure ZIP + XML, no Apache POI ─────────────────────────
+    // A .docx is a ZIP file. The full story text lives in word/document.xml
+    // Text is stored inside <w:t> elements, paragraphs are <w:p> elements.
     private fun readDocxFile(context: Context, uri: Uri): String {
         val stream: InputStream = context.contentResolver.openInputStream(uri)
             ?: throw Exception("Cannot open file")
+
         return stream.use { inputStream ->
-            val doc = XWPFDocument(inputStream)
-            val sb  = StringBuilder()
-            doc.paragraphs.forEach { para ->
-                val text = para.text.trim()
-                if (text.isNotEmpty()) {
-                    sb.append(text)
-                    sb.append("\n")
+            val zipStream  = ZipInputStream(inputStream.buffered())
+            val sb         = StringBuilder()
+            var found      = false
+
+            // Walk ZIP entries until we find word/document.xml
+            var entry = zipStream.nextEntry
+            while (entry != null) {
+                if (entry.name == "word/document.xml") {
+                    found = true
+                    parseDocumentXml(zipStream, sb)
+                    break
                 }
+                zipStream.closeEntry()
+                entry = zipStream.nextEntry
             }
-            doc.close()
+            zipStream.close()
+
+            if (!found) throw Exception(
+                "Could not find document content inside the .docx file. " +
+                "Please re-save the file in Word and try again.")
+
             sb.toString()
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── XML parser for word/document.xml ──────────────────────────────────────
+    // Walks the XML tree:
+    //   <w:p>  = paragraph  → we add a newline after each paragraph
+    //   <w:t>  = text run   → we collect the text content
+    //   <w:br> = line break → we add \n
+    private fun parseDocumentXml(stream: InputStream, sb: StringBuilder) {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = true
+        val parser  = factory.newPullParser()
+        // Wrap stream so the ZIP entry stays open while we parse
+        parser.setInput(stream.buffered(), "UTF-8")
+
+        var insideBody = false
+        var event      = parser.eventType
+
+        while (event != XmlPullParser.END_DOCUMENT) {
+            when (event) {
+                XmlPullParser.START_TAG -> {
+                    val name = parser.name ?: ""
+                    when {
+                        // word/document.xml structure: w:document > w:body > ...
+                        name == "body"             -> insideBody = true
+                        insideBody && name == "t"  -> {
+                            // <w:t> may have xml:space="preserve" — getText() handles it
+                            val text = parser.nextText()
+                            if (text.isNotEmpty()) sb.append(text)
+                        }
+                        insideBody && name == "br" -> sb.append("\n")
+                        insideBody && name == "cr" -> sb.append("\n")
+                    }
+                }
+                XmlPullParser.END_TAG -> {
+                    val name = parser.name ?: ""
+                    when {
+                        // End of paragraph → add newline
+                        insideBody && name == "p"    -> sb.append("\n")
+                        insideBody && name == "body" -> insideBody = false
+                    }
+                }
+            }
+            event = parser.next()
+        }
+    }
+
+    // ── Text cleanup ──────────────────────────────────────────────────────────
     private fun cleanText(raw: String): String {
         return raw
-            .replace("\r\n", "\n")   // Windows line endings
-            .replace("\r",   "\n")   // Old Mac line endings
-            .replace("\u00A0", " ")  // Non-breaking spaces
+            .replace("\r\n", "\n")
+            .replace("\r",   "\n")
+            .replace("\u00A0", " ")     // Non-breaking space → normal space
+            .replace("\u000B", "\n")    // Vertical tab → newline
+            .replace("\u000C", "\n")    // Form feed → newline
             .lines()
-            .joinToString("\n") { it.trim() }   // Trim each line
-            .replace(Regex("\n{3,}"), "\n\n")   // Max 2 consecutive blank lines
+            .joinToString("\n") { it.trimEnd() }   // Trim trailing spaces per line
+            .replace(Regex("\n{3,}"), "\n\n")       // Max 2 consecutive blank lines
             .trim()
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
     fun countWords(text: String): Int =
-        text.trim().split(Regex("\\s+")).count { it.isNotEmpty() }
+        if (text.isBlank()) 0
+        else text.trim().split(Regex("\\s+")).count { it.isNotEmpty() }
 
     private fun getFileName(context: Context, uri: Uri): String {
         var name = "unknown"
@@ -126,6 +198,14 @@ object FileUtils {
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
             if (cursor.moveToFirst() && idx >= 0) size = cursor.getLong(idx)
+        }
+        // If SIZE not available, read the stream to check
+        if (size == 0L) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { s ->
+                    size = s.available().toLong()
+                }
+            } catch (_: Exception) {}
         }
         return size
     }
