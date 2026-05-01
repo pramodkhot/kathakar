@@ -148,4 +148,5 @@
 
     <string name="new_story_btn">+ New Story</string>
     <string name="save_chapter_btn">Save Chapter</string>
+    <string name="import_file_btn">Import file (.docx/.txt)</string>
 </resources>
