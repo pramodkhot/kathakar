@@ -271,10 +271,7 @@ class ReaderViewModel @Inject constructor(
             fontSize <= 22 -> 550
             else           -> 450
         }
-        val paragraphs = content.trim().split("
-
-", "
-").filter { it.isNotBlank() }
+        val paragraphs = content.trim().split("\n\n", "\n").filter { it.isNotBlank() }
         val pages = mutableListOf<String>()
         val current = StringBuilder()
         for (para in paragraphs) {
@@ -282,9 +279,7 @@ class ReaderViewModel @Inject constructor(
                 pages.add(current.toString().trim())
                 current.clear()
             }
-            if (current.isNotEmpty()) current.append("
-
-")
+            if (current.isNotEmpty()) current.append("\n\n")
             current.append(para)
         }
         if (current.isNotEmpty()) pages.add(current.toString().trim())
