@@ -158,7 +158,7 @@ class StoryViewModel @Inject constructor(
         _s.update { it.copy(isLoading = true) }
         val story    = (storyRepo.getStory(storyId) as? Resource.Success)?.data
         val episodes = (storyRepo.getEpisodes(storyId) as? Resource.Success)?.data ?: emptyList()
-        val unlocked = (coinRepo.getUnlockedEpisodeIds(userId, storyId) as? Resource.Success)?.data ?: emptySet()
+        val unlocked = coinRepo.getUnlockedIds(userId, storyId)
         val entry    = libRepo.getEntry(userId, storyId)
         val rating   = storyRepo.getUserRating(userId, storyId)
         _s.update { it.copy(story = story, episodes = episodes, unlockedIds = unlocked,
@@ -170,7 +170,11 @@ class StoryViewModel @Inject constructor(
 
     fun unlock(episode: Episode, user: User) {
         viewModelScope.launch {
-            when (val r = coinRepo.unlockEpisode(user, episode)) {
+            when (val r = coinRepo.unlockEpisode(
+                userId = user.userId,
+                authorId = episode.authorId,
+                episode = episode
+            )) {
                 is Resource.Success -> _s.update { it.copy(
                     unlockedIds = it.unlockedIds + episode.episodeId,
                     justUnlockedId = episode.episodeId) }
@@ -736,8 +740,8 @@ class FollowViewModel @Inject constructor(private val followRepo: FollowReposito
     private val _s = MutableStateFlow(FollowUiState()); val state = _s.asStateFlow()
 
     fun check(followerId: String, followeeId: String) = viewModelScope.launch {
-        val r = followRepo.isFollowing(followerId, followeeId)
-        _s.update { it.copy(isFollowing = r is Resource.Success && r.data) }
+        val isFollowing = followRepo.isFollowing(followerId, followeeId)
+        _s.update { it.copy(isFollowing = isFollowing) }
     }
 
     fun toggle(followerId: String, followeeId: String) = viewModelScope.launch {
@@ -764,16 +768,16 @@ class AdminViewModel @Inject constructor(private val adminRepo: AdminRepository)
 
     fun load() = viewModelScope.launch {
         _s.update { it.copy(isLoading = true) }
-        val stats   = (adminRepo.getStats() as? Resource.Success)?.data ?: AdminStats()
-        val users   = (adminRepo.getAllUsers() as? Resource.Success)?.data ?: emptyList()
-        val stories = (adminRepo.getAllStories() as? Resource.Success)?.data ?: emptyList()
+        val stats   = try { adminRepo.getStats() } catch (_: Exception) { AdminStats() }
+        val users   = (adminRepo.getAllUsers() as? Resource.Success<List<User>>)?.data ?: emptyList()
+        val stories = (adminRepo.getAllStories() as? Resource.Success<List<Story>>)?.data ?: emptyList()
         _s.update { it.copy(stats = stats, users = users, stories = stories, isLoading = false) }
     }
     fun onTabChange(tab: Int)                          = _s.update { it.copy(selectedTab = tab) }
-    fun updateRole(userId: String, role: UserRole)     = viewModelScope.launch { adminRepo.updateRole(userId, role); load() }
+    fun updateRole(userId: String, role: UserRole)     = viewModelScope.launch { adminRepo.updateUserRole(userId, role); load() }
     fun toggleBan(userId: String, banned: Boolean)     = viewModelScope.launch { adminRepo.toggleBan(userId, banned); load() }
-    fun suspendStory(storyId: String)                  = viewModelScope.launch { adminRepo.suspendStory(storyId); load() }
-    fun restoreStory(storyId: String)                  = viewModelScope.launch { adminRepo.restoreStory(storyId); load() }
+    fun suspendStory(storyId: String)                  = viewModelScope.launch { adminRepo.updateStoryStatus(storyId, "SUSPENDED"); load() }
+    fun restoreStory(storyId: String)                  = viewModelScope.launch { adminRepo.updateStoryStatus(storyId, "PUBLISHED"); load() }
     fun deleteStory(storyId: String)                   = viewModelScope.launch { adminRepo.deleteStory(storyId); load() }
     fun clearMessage()                                 = _s.update { it.copy(message = null) }
 }
