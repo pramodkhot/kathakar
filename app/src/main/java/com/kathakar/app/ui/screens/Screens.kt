@@ -452,6 +452,7 @@ fun EpisodeReaderScreen(
     }
 
     // Pager state — initialized to saved page
+    val scope = rememberCoroutineScope()
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(
         initialPage = state.savedPage.coerceIn(0, maxOf(0, state.pages.size - 1)),
         pageCount   = { maxOf(1, state.pages.size) }
@@ -621,8 +622,7 @@ fun EpisodeReaderScreen(
                     IconButton(
                         onClick = {
                             if (pagerState.currentPage > 0) {
-                                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
-                                    .launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+                                scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
                             }
                         },
                         enabled = pagerState.currentPage > 0
@@ -652,8 +652,7 @@ fun EpisodeReaderScreen(
                     IconButton(
                         onClick = {
                             if (pagerState.currentPage < totalPages - 1) {
-                                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
-                                    .launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                                scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                             }
                         },
                         enabled = pagerState.currentPage < totalPages - 1
@@ -705,6 +704,169 @@ fun EpisodeReaderScreen(
                 TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
+    }
+}
+
+
+// ── Write Screen ───────────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WriteScreen(user: User, onCreateStory: () -> Unit, onCreateEpisode: (String, Int) -> Unit,
+                onAiClick: () -> Unit, onBack: () -> Unit, onReadStory: (String) -> Unit = {},
+                onLibraryClick: () -> Unit = {}, onProfileClick: () -> Unit = {},
+                onPoemsClick: () -> Unit = {}, onWriterDashboard: () -> Unit = {},
+                vm: WriterViewModel = hiltViewModel()) {
+    val state by vm.state.collectAsState()
+    var tab by remember { mutableIntStateOf(0) }
+    LaunchedEffect(user.userId) { vm.loadMyStories(user.userId) }
+    Scaffold(
+        topBar = { TopAppBar(
+            title = { Text(text = stringResource(R.string.write_title)) },
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }) },
+        bottomBar = { KathakarBottomNav(1, onRead = onBack, onWrite = {}, onPoems = onPoemsClick,
+            onLibrary = onLibraryClick, onProfile = onProfileClick) }
+    ) { p ->
+        Column(modifier = Modifier.fillMaxSize().padding(p)) {
+            TabRow(selectedTabIndex = tab) {
+                Tab(selected = tab == 0, onClick = { tab = 0 },
+                    text = { Text(text = stringResource(R.string.my_stories)) })
+                Tab(selected = tab == 1, onClick = { tab = 1; onWriterDashboard() },
+                    text = { Text(text = stringResource(R.string.writer_dashboard)) })
+                Tab(selected = tab == 2, onClick = { tab = 2; onAiClick() },
+                    text = { Text(text = stringResource(R.string.ai_assist)) })
+            }
+            LazyColumn(modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item {
+                    Button(onClick = onCreateStory, modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(text = stringResource(R.string.new_story_btn))
+                    }
+                }
+                if (state.isLoading) {
+                    item { Box(modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+                }
+                items(state.myStories, key = { it.storyId }) { story ->
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = story.title, fontWeight = FontWeight.Medium,
+                                    fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                Surface(
+                                    color = if (story.status == "PUBLISHED")
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(6.dp)) {
+                                    Text(text = story.status.lowercase(), fontSize = 11.sp,
+                                        modifier = Modifier.padding(7.dp, 3.dp))
+                                }
+                            }
+                            Text(text = "${story.totalEpisodes} episodes - ${story.category}",
+                                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp))
+                            // Show reads if any
+                            if (story.totalReads > 0) {
+                                Text(text = "👁 ${story.totalReads} reads", fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 2.dp))
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { onReadStory(story.storyId) },
+                                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
+                                    Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text(text = stringResource(R.string.read_label), fontSize = 12.sp)
+                                }
+                                Button(onClick = { onCreateEpisode(story.storyId, story.totalEpisodes + 1) },
+                                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
+                                    Icon(Icons.Default.Add, null, modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text(text = "+ Ch. ${story.totalEpisodes + 1}", fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Edit Episode ───────────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditEpisodeScreen(episodeId: String, storyId: String,
+                      onDone: () -> Unit, onBack: () -> Unit,
+                      vm: WriterViewModel = hiltViewModel()) {
+    val state   by vm.state.collectAsState()
+    val context  = LocalContext.current
+    var fileError    by remember { mutableStateOf<String?>(null) }
+    var importedFrom by remember { mutableStateOf<String?>(null) }
+
+    // Load episode content for editing
+    LaunchedEffect(episodeId) {
+        // Pre-fill with current content — loaded via storyRepo in a real impl
+        // For now the writer types new content
+    }
+
+    val fileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val result = com.kathakar.app.util.FileUtils.readFile(context, uri)
+            if (result.isSuccess) {
+                vm.onEpContentChange(result.text)
+                importedFrom = result.fileName; fileError = null
+            } else { fileError = result.error }
+        }
+    }
+
+    LaunchedEffect(state.message) {
+        if (state.message != null) { onDone(); vm.clearMessage() }
+    }
+
+    Scaffold(topBar = { TopAppBar(
+        title = { Text(text = stringResource(R.string.edit_chapter)) },
+        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
+        actions = { Text(text = "${state.wordCount} words", fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(end = 12.dp)) }) }
+    ) { p ->
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(p).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(value = state.epTitle, onValueChange = vm::onEpTitleChange,
+                label = { Text(text = stringResource(R.string.chapter_title_hint)) },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), singleLine = true)
+            // Import button
+            OutlinedButton(onClick = { fileLauncher.launch(arrayOf("text/plain",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(text = if (importedFrom != null) "Imported: $importedFrom"
+                    else stringResource(R.string.import_file_btn))
+            }
+            fileError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+            OutlinedTextField(value = state.epContent, onValueChange = vm::onEpContentChange,
+                label = { Text(text = stringResource(R.string.chapter_content_hint)) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp),
+                shape = RoundedCornerShape(12.dp), minLines = 12)
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+            Button(onClick = { vm.updateEpisode(episodeId, storyId, state.epTitle, state.epContent, onDone) },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(14.dp), enabled = !state.isSaving) {
+                if (state.isSaving) CircularProgressIndicator(modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                else Text(text = stringResource(R.string.save_chapter_btn), fontWeight = FontWeight.Medium)
+            }
+        }
     }
 }
 
