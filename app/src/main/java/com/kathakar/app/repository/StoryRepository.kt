@@ -104,8 +104,15 @@ class StoryRepository @Inject constructor(
             val ref = storage.reference.child("story_covers/$storyId.jpg")
             ref.putFile(imageUri).await()
             val url = ref.downloadUrl.await().toString()
-            // Update story document with cover URL
-            storiesCol.document(storyId).update("coverUrl", url).await()
+            // Update Firestore — retry once if it fails
+            try {
+                storiesCol.document(storyId).update("coverUrl", url).await()
+            } catch (_: Exception) {
+                // Story document may not have coverUrl field yet — use set with merge
+                storiesCol.document(storyId)
+                    .set(mapOf("coverUrl" to url), com.google.firebase.firestore.SetOptions.merge())
+                    .await()
+            }
             Resource.Success(url)
         } catch (e: Exception) { Resource.Error("Cover upload failed: " + e.localizedMessage) }
     }
