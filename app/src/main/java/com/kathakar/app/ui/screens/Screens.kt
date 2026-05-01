@@ -259,7 +259,7 @@ fun StoryDetailScreen(storyId: String, user: User, onBack: () -> Unit,
             items(state.episodes, key = { it.episodeId }) { ep ->
                 val isAuthor   = user.userId == (state.story?.authorId ?: "")
                 val isUnlocked = isAuthor || ep.isFree || ep.chapterNumber == 1 || state.unlockedIds.contains(ep.episodeId)
-                EpisodeRow(episode = ep, isUnlocked = isUnlocked, isUnlocking = state.unlockingId == ep.episodeId, isAuthor = isAuthor, userCoins = user.coinBalance,
+                EpisodeRow(episode = ep, isUnlocked = isUnlocked, isAuthor = isAuthor, userCoins = user.coinBalance,
                     onTap = { if (isUnlocked) onReadEpisode(ep.episodeId, state.story?.authorId ?: "") else vm.unlock(ep, user) })
             }
         }
@@ -311,11 +311,11 @@ fun EpisodeReaderScreen(episodeId: String, storyId: String, authorId: String, cu
     val snackbar  = remember { SnackbarHostState() }
     var showDeleteDialog by remember { mutableStateOf(false) }
     val isAuthor = currentUserId == authorId
-    LaunchedEffect(episodeId) { vm.load(episodeId) }
+    LaunchedEffect(episodeId) { vm.load(episodeId, currentUserId) }
     LaunchedEffect(wState.message) { wState.message?.let { snackbar.showSnackbar(it); writerVm.clearMessage() } }
     LaunchedEffect(wState.error)   { wState.error?.let   { snackbar.showSnackbar(it); writerVm.clearError() } }
     Scaffold(snackbarHost = { SnackbarHost(snackbar) },
-        topBar = { TopAppBar(title = { Text(text = ep?.let { "Chapter " + it.chapterNumber } ?: "Reading...", maxLines = 1) },
+        topBar = { TopAppBar(title = { Text(text = state.episode?.let { "Chapter " + it.chapterNumber } ?: "Reading...", maxLines = 1) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
             actions = { if (isAuthor) {
                 IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit chapter", tint = MaterialTheme.colorScheme.primary) }
@@ -345,11 +345,12 @@ fun EpisodeReaderScreen(episodeId: String, storyId: String, authorId: String, cu
 @Composable
 fun EditEpisodeScreen(episodeId: String, storyId: String, onDone: () -> Unit, onBack: () -> Unit,
                       readerVm: ReaderViewModel = hiltViewModel(), writerVm: WriterViewModel = hiltViewModel()) {
-    val ep     by readerVm.episode.collectAsState()
+    val readerState by readerVm.state.collectAsState()
+    val ep = readerState.episode
     val wState by writerVm.state.collectAsState()
     var title   by remember { mutableStateOf("") }; var content by remember { mutableStateOf("") }
     var loaded  by remember { mutableStateOf(false) }
-    LaunchedEffect(episodeId) { readerVm.load(episodeId) }
+    LaunchedEffect(episodeId) { readerVm.load(episodeId, "") }
     LaunchedEffect(ep) { if (ep != null && !loaded) { title = ep!!.title; content = ep!!.content; loaded = true } }
     val wordCount = content.trim().split("\\s+".toRegex()).filter { it.isNotEmpty() }.size
     Scaffold(topBar = { TopAppBar(title = { Text(text = if (ep != null) stringResource(R.string.edit_chapter) + " " + ep!!.chapterNumber else stringResource(R.string.edit_chapter)) },
@@ -970,7 +971,7 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     // Like button
                     OutlinedButton(onClick = { vm.toggleLike(user.userId, poemId) },
-                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), enabled = !state.isLiking) {
+                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), enabled = true) {
                         Icon(if (state.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null,
                             tint = if (state.isLiked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(18.dp))
@@ -980,7 +981,7 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
 
                     // Tip button — only show if not the author
                     if (!isAuthor) {
-                        Button(onClick = { vm.openTipDialog() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), enabled = !state.isTipping,
+                        Button(onClick = { vm.openTipDialog() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), enabled = true,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)) {
                             Text(text = stringResource(R.string.tip_poet))
                             if (poem.tipsCount > 0) { Spacer(Modifier.width(4.dp)); Text(text = "·" + poem.tipsCount, fontSize = 11.sp) }
@@ -1086,7 +1087,7 @@ fun LibraryScreen(userId: String, onStoryClick: (String) -> Unit, onBack: () -> 
                 item {
                     Box(modifier = Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.Bookmark, null, modifier = Modifier.size(64.dp),
+                            Icon(Icons.Default.Favorite, null, modifier = Modifier.size(64.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(0.3f))
                             Spacer(Modifier.height(16.dp))
                             Text(text = stringResource(R.string.library_empty), fontSize = 16.sp,
@@ -1111,7 +1112,7 @@ fun LibraryScreen(userId: String, onStoryClick: (String) -> Unit, onBack: () -> 
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.size(48.dp, 64.dp)) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Book, null,
+                                    Icon(Icons.Default.Article, null,
                                         tint = MaterialTheme.colorScheme.primary)
                                 }
                             }
@@ -1124,7 +1125,7 @@ fun LibraryScreen(userId: String, onStoryClick: (String) -> Unit, onBack: () -> 
                                 Text(text = "Ch. ${entry.lastEpisodeRead} of ${entry.totalEpisodes}",
                                     fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                             }
-                            Icon(Icons.Default.Bookmark, null, modifier = Modifier.size(16.dp),
+                            Icon(Icons.Default.Favorite, null, modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.primary)
                         }
                     }
