@@ -249,12 +249,19 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun saveProgress(userId: String, story: Story, episode: Episode) = viewModelScope.launch {
+    fun saveProgress(userId: String, storyId: String, episode: Episode) = viewModelScope.launch {
+        // Fetch story to get title, authorName, totalEpisodes
+        val story = (storyRepo.getStory(storyId) as? Resource.Success)?.data
         storyRepo.saveReadingProgress(ReadingProgress(
-            userId = userId, storyId = story.storyId, storyTitle = story.title,
-            storyCoverUrl = story.coverUrl, authorName = story.authorName,
-            lastEpisodeId = episode.episodeId, lastChapterNumber = episode.chapterNumber,
-            lastChapterTitle = episode.title, totalEpisodes = story.totalEpisodes))
+            userId = userId,
+            storyId = storyId,
+            storyTitle = story?.title ?: "",
+            storyCoverUrl = story?.coverUrl ?: "",
+            authorName = story?.authorName ?: "",
+            lastEpisodeId = episode.episodeId,
+            lastChapterNumber = episode.chapterNumber,
+            lastChapterTitle = episode.title,
+            totalEpisodes = story?.totalEpisodes ?: episode.chapterNumber))
     }
 
     fun toggleLike(userId: String, episodeId: String) = viewModelScope.launch {
