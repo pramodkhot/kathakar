@@ -314,32 +314,111 @@ fun EpisodeReaderScreen(episodeId: String, storyId: String, authorId: String, cu
     val snackbar  = remember { SnackbarHostState() }
     var showDeleteDialog by remember { mutableStateOf(false) }
     val isAuthor = currentUserId == authorId
+
     LaunchedEffect(episodeId) { vm.load(episodeId, currentUserId) }
     LaunchedEffect(wState.message) { wState.message?.let { snackbar.showSnackbar(it); writerVm.clearMessage() } }
     LaunchedEffect(wState.error)   { wState.error?.let   { snackbar.showSnackbar(it); writerVm.clearError() } }
-    Scaffold(snackbarHost = { SnackbarHost(snackbar) },
-        topBar = { TopAppBar(title = { Text(text = state.episode?.let { "Chapter " + it.chapterNumber } ?: "Reading...", maxLines = 1) },
-            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
-            actions = { if (isAuthor) {
-                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit chapter", tint = MaterialTheme.colorScheme.primary) }
-                IconButton(onClick = { showDeleteDialog = true }) { Icon(Icons.Default.Delete, "Delete chapter", tint = MaterialTheme.colorScheme.error) }
-            } }) }
-    ) { p ->
-        if (ep == null) { Box(modifier = Modifier.fillMaxSize().padding(p), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; return@Scaffold }
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(p), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp)) {
-            item { Text(text = ep!!.title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Text(text = ep!!.wordCount.toString() + " words", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(20.dp))
-                Text(text = ep!!.content, fontSize = 16.sp, lineHeight = 28.sp) }
+
+    // ── Auto-save reading progress when chapter loads ──────────────────────
+    LaunchedEffect(ep) {
+        val episode = ep ?: return@LaunchedEffect
+        if (episode.episodeId.isNotEmpty()) {
+            vm.saveProgress(currentUserId, storyId, episode)
         }
     }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbar) },
+        topBar = { TopAppBar(
+            title = { Text(text = ep?.let { "Chapter " + it.chapterNumber } ?: "Reading...", maxLines = 1) },
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
+            actions = {
+                // Like button
+                if (!isAuthor) {
+                    IconButton(onClick = { vm.toggleLike(currentUserId, episodeId) }) {
+                        Icon(if (state.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            null, tint = if (state.isLiked) MaterialTheme.colorScheme.error
+                                         else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp))
+                    }
+                }
+                // Comment button
+                IconButton(onClick = { vm.toggleComments(); vm.loadComments(episodeId) }) {
+                    Icon(Icons.Default.Info, null, modifier = Modifier.size(20.dp))
+                }
+                if (isAuthor) {
+                    IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.primary) }
+                    IconButton(onClick = { showDeleteDialog = true }) { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }
+                }
+            })
+        }
+    ) { p ->
+        if (ep == null) {
+            Box(modifier = Modifier.fillMaxSize().padding(p), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
+        Column(modifier = Modifier.fillMaxSize().padding(p)) {
+            // Like count bar
+            if (state.likesCount > 0) {
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Favorite, null, modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(4.dp))
+                        Text(text = "${state.likesCount} likes", fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            LazyColumn(modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp)) {
+                item {
+                    Text(text = ep!!.title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(text = "${ep!!.wordCount} words", fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (ep!!.readTimeDisplay.isNotEmpty()) {
+                            Text(text = ep!!.readTimeDisplay, fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    Text(text = ep!!.content, fontSize = 16.sp, lineHeight = 28.sp)
+                    Spacer(Modifier.height(32.dp))
+                }
+            }
+        }
+    }
+
+    // Comments sheet
+    if (state.showComments) {
+        ChapterCommentsSheet(
+            comments = state.comments,
+            commentText = state.commentText,
+            isPosting = state.isPostingComment,
+            currentUserId = currentUserId,
+            onCommentChange = { vm.onCommentChange(it) },
+            onPost = { vm.postComment(currentUserId,
+                currentUser?.name ?: "Reader",
+                currentUser?.photoUrl ?: "",
+                episodeId, storyId) },
+            onDelete = { commentId -> vm.deleteComment(commentId, episodeId) },
+            onDismiss = { vm.toggleComments() }
+        )
+    }
+
     if (showDeleteDialog) {
-        AlertDialog(onDismissRequest = { showDeleteDialog = false }, title = { Text(text = stringResource(R.string.delete_chapter_title)) },
+        AlertDialog(onDismissRequest = { showDeleteDialog = false },
+            title = { Text(text = stringResource(R.string.delete_chapter_title)) },
             text = { Text(text = "\"${ep?.title ?: ""}\" " + stringResource(R.string.delete) + "?") },
             confirmButton = { Button(onClick = { showDeleteDialog = false; writerVm.deleteEpisode(episodeId, storyId) { onDeleted() } },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text(text = stringResource(R.string.delete)) } },
-            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text(text = stringResource(R.string.cancel)) } })
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                Text(text = stringResource(R.string.delete)) } },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) {
+                Text(text = stringResource(R.string.cancel)) } })
     }
 }
 
@@ -1152,7 +1231,16 @@ fun ProfileScreen(user: User, onSignOut: () -> Unit, onBuyCoins: () -> Unit, onS
     LaunchedEffect(user.userId) { vm.load(user.userId) }
     Scaffold(topBar = { TopAppBar(title = { Text(text = stringResource(R.string.profile_title)) },
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
-        actions = { TextButton(onClick = onSignOut) { Text(text = stringResource(R.string.sign_out), color = MaterialTheme.colorScheme.error) } }) },
+        actions = {
+            // Notifications bell
+            IconButton(onClick = onNotifications) {
+                Icon(Icons.Default.Notifications, contentDescription = "Notifications",
+                    tint = MaterialTheme.colorScheme.onSurface)
+            }
+            TextButton(onClick = onSignOut) {
+                Text(text = stringResource(R.string.sign_out), color = MaterialTheme.colorScheme.error)
+            }
+        }) },
         bottomBar = { KathakarBottomNav(4, onRead = onBack, onWrite = onWriteClick, onPoems = onPoemsClick, onLibrary = onLibraryClick, onProfile = {}) }
     ) { p ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(p), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
