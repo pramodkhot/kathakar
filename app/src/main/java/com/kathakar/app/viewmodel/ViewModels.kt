@@ -1,5 +1,6 @@
 package com.kathakar.app.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -10,21 +11,26 @@ import com.kathakar.app.util.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Auth ───────────────────────────────────────────────────────────────────────
 data class AuthUiState(
-    val isLoading: Boolean = false,
     val user: User? = null,
+    val isAuthenticated: Boolean = false,
+    val isLoading: Boolean = false,
     val error: String? = null
-) { val isAuthenticated get() = user != null }
+)
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(private val repo: AuthRepository) : ViewModel() {
     private val _s = MutableStateFlow(AuthUiState()); val state = _s.asStateFlow()
-    init { viewModelScope.launch { repo.currentUserFlow.collect { u -> _s.update { it.copy(user = u) } } } }
+    val user get() = _s.value.user
+    val isAuthenticated get() = _s.value.isAuthenticated
+
     fun signInWithGoogle(acc: GoogleSignInAccount) = doAuth { repo.signInWithGoogle(acc) }
     fun signInWithEmail(e: String, p: String) {
         if (e.isBlank() || p.isBlank()) { _s.update { it.copy(error = "Email and password required") }; return }
@@ -37,28 +43,29 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
     fun signOut() { repo.signOut(); _s.value = AuthUiState() }
 
     fun savePreferredLanguages(userId: String, langs: List<String>, onDone: () -> Unit) {
-        viewModelScope.launch {
-            repo.savePreferredLanguages(userId, langs)
-            onDone()
-        }
+        viewModelScope.launch { repo.savePreferredLanguages(userId, langs); onDone() }
     }
     fun clearError() = _s.update { it.copy(error = null) }
     private fun doAuth(block: suspend () -> Resource<User>) = viewModelScope.launch {
         _s.update { it.copy(isLoading = true, error = null) }
         when (val r = block()) {
-            is Resource.Success -> _s.update { it.copy(isLoading = false, user = r.data) }
+            is Resource.Success -> _s.update { it.copy(user = r.data, isAuthenticated = true, isLoading = false) }
             is Resource.Error   -> _s.update { it.copy(isLoading = false, error = r.message) }
-            else -> _s.update { it.copy(isLoading = false) }
+            else -> Unit
         }
     }
 }
 
-// ── Home (Stories) ────────────────────────────────────────────────────────────
+// ── Home ───────────────────────────────────────────────────────────────────────
 data class HomeUiState(
-    val stories: List<Story> = emptyList(), val isLoading: Boolean = false,
-    val isLoadingMore: Boolean = false, val error: String? = null,
-    val searchQuery: String = "", val selectedCategory: String? = null,
-    val selectedLanguage: String? = null, val hasMore: Boolean = true
+    val stories: List<Story> = emptyList(),
+    val isLoading: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val error: String? = null,
+    val searchQuery: String = "",
+    val selectedCategory: String? = null,
+    val selectedLanguage: String? = null,
+    val hasMore: Boolean = true
 )
 
 @HiltViewModel
@@ -70,10 +77,8 @@ class HomeViewModel @Inject constructor(private val storyRepo: StoryRepository) 
 
     fun setPreferredLanguages(langs: List<String>) {
         if (langs == preferredLanguages) return
-        preferredLanguages = langs
-        load(reset = true)
+        preferredLanguages = langs; load(reset = true)
     }
-
     init { load() }
 
     fun load(reset: Boolean = true) {
@@ -83,7 +88,6 @@ class HomeViewModel @Inject constructor(private val storyRepo: StoryRepository) 
             _s.update { if (reset) it.copy(isLoading = true, stories = emptyList(), error = null)
                         else it.copy(isLoadingMore = true) }
             val s = _s.value
-            // Priority feed when preferred languages set and no manual filter active
             if (preferredLanguages.isNotEmpty() && s.selectedLanguage == null) {
                 loadPrioritized(s.selectedCategory)
             } else {
@@ -102,19 +106,14 @@ class HomeViewModel @Inject constructor(private val storyRepo: StoryRepository) 
         try {
             val r = storyRepo.getStories(category, null, null)
             if (r is Resource.Success) {
-                val all       = r.data.first
+                val all = r.data.first
                 val preferred = all.filter { it.language in preferredLanguages }
                 val others    = all.filter { it.language !in preferredLanguages }
                 val combined  = preferred + others
                 _s.update { it.copy(stories = combined.take(20), hasMore = combined.size > 20,
                     isLoading = false, isLoadingMore = false) }
-            } else {
-                _s.update { it.copy(isLoading = false,
-                    error = (r as? Resource.Error)?.message) }
-            }
-        } catch (e: Exception) {
-            _s.update { it.copy(isLoading = false, error = e.localizedMessage) }
-        }
+            } else _s.update { it.copy(isLoading = false, error = (r as? Resource.Error)?.message) }
+        } catch (e: Exception) { _s.update { it.copy(isLoading = false, error = e.localizedMessage) } }
     }
 
     fun onSearch(q: String) {
@@ -128,7 +127,7 @@ class HomeViewModel @Inject constructor(private val storyRepo: StoryRepository) 
             } }
     }
     fun onCategory(c: String?) { _s.update { it.copy(selectedCategory = c) }; load() }
-    fun onLanguage(l: String?) { _s.update { it.copy(selectedLanguage = l) }; load() }
+    fun onLanguage(l: String?)  { _s.update { it.copy(selectedLanguage = l) }; load() }
     fun loadMore()   = load(reset = false)
     fun clearError() = _s.update { it.copy(error = null) }
     fun refresh()    = load(reset = true)
@@ -136,74 +135,194 @@ class HomeViewModel @Inject constructor(private val storyRepo: StoryRepository) 
 
 // ── Story Detail ───────────────────────────────────────────────────────────────
 data class StoryUiState(
-    val story: Story? = null, val episodes: List<Episode> = emptyList(),
-    val unlockedIds: Set<String> = emptySet(), val isBookmarked: Boolean = false,
-    val isLoading: Boolean = false, val unlockingId: String? = null,
-    val justUnlockedId: String? = null, val newCoinBalance: Int? = null, val error: String? = null
+    val story: Story? = null,
+    val episodes: List<Episode> = emptyList(),
+    val unlockedIds: Set<String> = emptySet(),
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val justUnlockedId: String? = null,
+    val isBookmarked: Boolean = false,
+    val userRating: Rating? = null,
+    val showRatingSheet: Boolean = false
 )
 
 @HiltViewModel
 class StoryViewModel @Inject constructor(
-    private val storyRepo: StoryRepository, private val coinRepo: CoinRepository,
+    private val storyRepo: StoryRepository,
+    private val coinRepo: CoinRepository,
     private val libRepo: LibraryRepository
 ) : ViewModel() {
     private val _s = MutableStateFlow(StoryUiState()); val state = _s.asStateFlow()
+
     fun load(storyId: String, userId: String) = viewModelScope.launch {
-        _s.update { it.copy(isLoading = true, error = null) }
+        _s.update { it.copy(isLoading = true) }
         val story    = (storyRepo.getStory(storyId) as? Resource.Success)?.data
         val episodes = (storyRepo.getEpisodes(storyId) as? Resource.Success)?.data ?: emptyList()
-        val unlocked = coinRepo.getUnlockedIds(userId, storyId)
+        val unlocked = (coinRepo.getUnlockedEpisodeIds(userId, storyId) as? Resource.Success)?.data ?: emptySet()
         val entry    = libRepo.getEntry(userId, storyId)
+        val rating   = storyRepo.getUserRating(userId, storyId)
         _s.update { it.copy(story = story, episodes = episodes, unlockedIds = unlocked,
-            isBookmarked = entry?.isBookmarked ?: false, isLoading = false) }
+            isLoading = false, isBookmarked = entry?.isBookmarked == true,
+            userRating = rating) }
+        // Increment read count
+        storyRepo.incrementReadCount(storyId)
     }
+
     fun unlock(episode: Episode, user: User) {
-        if (_s.value.unlockingId != null) return
-        if (user.userId == episode.authorId) {
-            _s.update { it.copy(unlockedIds = it.unlockedIds + episode.episodeId, justUnlockedId = episode.episodeId) }; return
-        }
         viewModelScope.launch {
-            _s.update { it.copy(unlockingId = episode.episodeId, error = null) }
-            when (val r = coinRepo.unlockEpisode(user.userId, episode.authorId, episode)) {
-                is Resource.Success -> _s.update { it.copy(unlockingId = null,
+            when (val r = coinRepo.unlockEpisode(user, episode)) {
+                is Resource.Success -> _s.update { it.copy(
                     unlockedIds = it.unlockedIds + episode.episodeId,
-                    justUnlockedId = episode.episodeId, newCoinBalance = r.data) }
-                is Resource.Error -> _s.update { it.copy(unlockingId = null, error = r.message) }
+                    justUnlockedId = episode.episodeId) }
+                is Resource.Error -> _s.update { it.copy(error = r.message) }
                 else -> Unit
             }
         }
     }
+
     fun toggleBookmark(userId: String, story: Story) = viewModelScope.launch {
-        val entry = LibraryEntry(userId = userId, storyId = story.storyId, storyTitle = story.title,
-            storyCoverUrl = story.coverUrl, authorName = story.authorName, isBookmarked = !_s.value.isBookmarked)
-        libRepo.upsert(entry); _s.update { it.copy(isBookmarked = entry.isBookmarked) }
+        val current = _s.value.isBookmarked
+        val entry = LibraryEntry(userId = userId, storyId = story.storyId,
+            storyTitle = story.title, storyCoverUrl = story.coverUrl,
+            authorName = story.authorName, totalEpisodes = story.totalEpisodes,
+            isBookmarked = !current, lastReadAt = com.google.firebase.Timestamp.now())
+        libRepo.upsert(entry)
+        _s.update { it.copy(isBookmarked = !current) }
     }
+
+    fun submitRating(userId: String, storyId: String, stars: Int, review: String) {
+        viewModelScope.launch {
+            val rating = Rating(userId = userId, storyId = storyId, stars = stars, review = review)
+            storyRepo.saveRating(rating)
+            _s.update { it.copy(userRating = rating, showRatingSheet = false) }
+            // Reload story to get updated avgRating
+            val updated = (storyRepo.getStory(storyId) as? Resource.Success)?.data
+            _s.update { it.copy(story = updated ?: it.story) }
+        }
+    }
+
+    fun openRatingSheet()  = _s.update { it.copy(showRatingSheet = true) }
+    fun closeRatingSheet() = _s.update { it.copy(showRatingSheet = false) }
     fun clearJustUnlocked() = _s.update { it.copy(justUnlockedId = null) }
     fun clearError()        = _s.update { it.copy(error = null) }
 }
 
 // ── Episode Reader ─────────────────────────────────────────────────────────────
-@HiltViewModel
-class ReaderViewModel @Inject constructor(private val storyRepo: StoryRepository) : ViewModel() {
-    private val _ep = MutableStateFlow<Episode?>(null); val episode = _ep.asStateFlow()
-    fun load(id: String) = viewModelScope.launch {
-        _ep.value = (storyRepo.getEpisode(id) as? Resource.Success)?.data
-    }
-}
-
-// ── Writer (Stories) ──────────────────────────────────────────────────────────
-data class WriterUiState(
-    val myStories: List<Story> = emptyList(), val storyTitle: String = "",
-    val storyDesc: String = "", val storyCategory: String = "", val storyLanguage: String = "en",
-    val epTitle: String = "", val epContent: String = "", val wordCount: Int = 0,
-    val isLoading: Boolean = false, val isSaving: Boolean = false,
-    val savedStoryId: String? = null, val savedEpisodeId: String? = null,
-    val message: String? = null, val error: String? = null
+data class ReaderUiState(
+    val episode: Episode? = null,
+    val isLoading: Boolean = false,
+    // Reading settings
+    val fontSize: Int = 18,
+    val isNightMode: Boolean = false,
+    val fontFamily: String = "Default",
+    // Interaction
+    val isLiked: Boolean = false,
+    val likesCount: Int = 0,
+    val comments: List<Comment> = emptyList(),
+    val showComments: Boolean = false,
+    val commentText: String = "",
+    val isPostingComment: Boolean = false,
+    val showSettingsBar: Boolean = false
 )
 
 @HiltViewModel
-class WriterViewModel @Inject constructor(private val storyRepo: StoryRepository) : ViewModel() {
+class ReaderViewModel @Inject constructor(
+    private val storyRepo: StoryRepository
+) : ViewModel() {
+    private val _s = MutableStateFlow(ReaderUiState()); val state = _s.asStateFlow()
+
+    fun load(episodeId: String, userId: String) = viewModelScope.launch {
+        _s.update { it.copy(isLoading = true) }
+        when (val r = storyRepo.getEpisode(episodeId)) {
+            is Resource.Success -> {
+                val ep = r.data
+                val isLiked = storyRepo.isEpisodeLiked(userId, episodeId)
+                _s.update { it.copy(episode = ep, isLoading = false,
+                    isLiked = isLiked, likesCount = ep.likesCount) }
+            }
+            is Resource.Error -> _s.update { it.copy(isLoading = false) }
+            else -> Unit
+        }
+    }
+
+    fun saveProgress(userId: String, story: Story, episode: Episode) = viewModelScope.launch {
+        storyRepo.saveReadingProgress(ReadingProgress(
+            userId = userId, storyId = story.storyId, storyTitle = story.title,
+            storyCoverUrl = story.coverUrl, authorName = story.authorName,
+            lastEpisodeId = episode.episodeId, lastChapterNumber = episode.chapterNumber,
+            lastChapterTitle = episode.title, totalEpisodes = story.totalEpisodes))
+    }
+
+    fun toggleLike(userId: String, episodeId: String) = viewModelScope.launch {
+        val r = storyRepo.toggleEpisodeLike(userId, episodeId)
+        if (r is Resource.Success) {
+            val isNowLiked = r.data
+            _s.update { it.copy(isLiked = isNowLiked,
+                likesCount = if (isNowLiked) it.likesCount + 1 else it.likesCount - 1) }
+        }
+    }
+
+    fun loadComments(episodeId: String) = viewModelScope.launch {
+        val r = storyRepo.getComments(episodeId)
+        if (r is Resource.Success) _s.update { it.copy(comments = r.data) }
+    }
+
+    fun postComment(userId: String, userName: String, userPhoto: String,
+                    episodeId: String, storyId: String) = viewModelScope.launch {
+        val text = _s.value.commentText.trim()
+        if (text.isBlank()) return@launch
+        _s.update { it.copy(isPostingComment = true) }
+        val comment = Comment(episodeId = episodeId, storyId = storyId,
+            userId = userId, userName = userName, userPhotoUrl = userPhoto, text = text)
+        val r = storyRepo.postComment(comment)
+        if (r is Resource.Success) {
+            _s.update { it.copy(commentText = "", isPostingComment = false,
+                comments = listOf(comment.copy(commentId = r.data)) + it.comments) }
+        } else _s.update { it.copy(isPostingComment = false) }
+    }
+
+    fun deleteComment(commentId: String, episodeId: String) = viewModelScope.launch {
+        storyRepo.deleteComment(commentId, episodeId)
+        _s.update { it.copy(comments = it.comments.filter { c -> c.commentId != commentId }) }
+    }
+
+    // Reading settings
+    fun setFontSize(size: Int)      = _s.update { it.copy(fontSize = size) }
+    fun setNightMode(on: Boolean)   = _s.update { it.copy(isNightMode = on) }
+    fun setFontFamily(f: String)    = _s.update { it.copy(fontFamily = f) }
+    fun toggleSettingsBar()         = _s.update { it.copy(showSettingsBar = !it.showSettingsBar) }
+    fun toggleComments()            = _s.update { it.copy(showComments = !it.showComments) }
+    fun onCommentChange(v: String)  = _s.update { it.copy(commentText = v) }
+}
+
+// ── Writer ─────────────────────────────────────────────────────────────────────
+data class WriterUiState(
+    val myStories: List<Story> = emptyList(),
+    val isLoading: Boolean = false,
+    val isSaving: Boolean = false,
+    val savedStoryId: String? = null,
+    val savedEpisodeId: String? = null,
+    val storyTitle: String = "",
+    val storyDesc: String = "",
+    val storyCategory: String = "",
+    val storyLanguage: String = "en",
+    val storyTags: List<String> = emptyList(),
+    val coverUri: Uri? = null,
+    val coverUrl: String = "",
+    val isUploadingCover: Boolean = false,
+    val epTitle: String = "",
+    val epContent: String = "",
+    val wordCount: Int = 0,
+    val error: String? = null,
+    val message: String? = null
+)
+
+@HiltViewModel
+class WriterViewModel @Inject constructor(
+    private val storyRepo: StoryRepository
+) : ViewModel() {
     private val _s = MutableStateFlow(WriterUiState()); val state = _s.asStateFlow()
+
     fun loadMyStories(authorId: String) = viewModelScope.launch {
         _s.update { it.copy(isLoading = true) }
         when (val r = storyRepo.getAuthorStories(authorId)) {
@@ -212,40 +331,56 @@ class WriterViewModel @Inject constructor(private val storyRepo: StoryRepository
             else -> Unit
         }
     }
+
+    fun uploadCover(storyId: String, uri: Uri) = viewModelScope.launch {
+        _s.update { it.copy(isUploadingCover = true) }
+        when (val r = storyRepo.uploadStoryCover(storyId, uri)) {
+            is Resource.Success -> _s.update { it.copy(coverUrl = r.data, coverUri = uri, isUploadingCover = false) }
+            is Resource.Error   -> _s.update { it.copy(isUploadingCover = false, error = r.message) }
+            else -> Unit
+        }
+    }
+
     fun deleteEpisode(episodeId: String, storyId: String, onDone: () -> Unit) = viewModelScope.launch {
         when (val r = storyRepo.deleteEpisode(episodeId, storyId)) {
-            is Resource.Success -> { _s.update { it.copy(message = "Chapter deleted") }; onDone() }
+            is Resource.Success -> { onDone(); _s.update { it.copy(message = "Chapter deleted") } }
             is Resource.Error   -> _s.update { it.copy(error = r.message) }
             else -> Unit
         }
     }
+
     fun updateEpisode(episodeId: String, storyId: String, title: String, content: String, onDone: () -> Unit) = viewModelScope.launch {
-        if (title.isBlank() || content.isBlank()) { _s.update { it.copy(error = "Title and content required") }; return@launch }
-        _s.update { it.copy(isSaving = true, error = null) }
+        _s.update { it.copy(isSaving = true) }
         when (val r = storyRepo.updateEpisode(episodeId, title, content)) {
             is Resource.Success -> { _s.update { it.copy(isSaving = false, message = "Chapter updated") }; onDone() }
             is Resource.Error   -> _s.update { it.copy(isSaving = false, error = r.message) }
             else -> Unit
         }
     }
+
     fun onTitleChange(v: String)    = _s.update { it.copy(storyTitle = v) }
     fun onDescChange(v: String)     = _s.update { it.copy(storyDesc = v) }
     fun onCategoryChange(v: String) = _s.update { it.copy(storyCategory = v) }
     fun onLanguageChange(v: String) = _s.update { it.copy(storyLanguage = v) }
+    fun onTagsChange(tags: List<String>) = _s.update { it.copy(storyTags = tags) }
     fun onEpTitleChange(v: String)  = _s.update { it.copy(epTitle = v) }
+    fun onCoverUriChange(uri: Uri)  = _s.update { it.copy(coverUri = uri) }
     fun onEpContentChange(v: String) {
-        val wc = v.trim().split("\\s+".toRegex()).filter { it.isNotEmpty() }.size
+        val wc = v.trim().split("\\s+".toRegex()).count { it.isNotEmpty() }
         _s.update { it.copy(epContent = v, wordCount = wc) }
     }
+
     fun saveStory(authorId: String, authorName: String) {
         val s = _s.value
         if (s.storyTitle.isBlank() || s.storyDesc.isBlank() || s.storyCategory.isBlank()) {
-            _s.update { it.copy(error = "Fill title, description and category") }; return }
+            _s.update { it.copy(error = "Fill title, description and category") }; return
+        }
         viewModelScope.launch {
-            _s.update { it.copy(isSaving = true, error = null) }
+            _s.update { it.copy(isSaving = true) }
             val story = Story(title = s.storyTitle, description = s.storyDesc,
-                category = s.storyCategory, language = s.storyLanguage,
-                authorId = authorId, authorName = authorName, status = "PUBLISHED")
+                authorId = authorId, authorName = authorName, coverUrl = s.coverUrl,
+                category = s.storyCategory, language = s.storyLanguage, tags = s.storyTags,
+                status = "PUBLISHED")
             when (val r = storyRepo.saveStory(story)) {
                 is Resource.Success -> _s.update { it.copy(isSaving = false, savedStoryId = r.data) }
                 is Resource.Error   -> _s.update { it.copy(isSaving = false, error = r.message) }
@@ -253,28 +388,82 @@ class WriterViewModel @Inject constructor(private val storyRepo: StoryRepository
             }
         }
     }
+
     fun saveEpisode(storyId: String, authorId: String, chapterNumber: Int, publish: Boolean) {
         val s = _s.value
-        if (s.epTitle.isBlank() || s.epContent.isBlank()) { _s.update { it.copy(error = "Title and content required") }; return }
+        if (s.epTitle.isBlank() || s.epContent.isBlank()) {
+            _s.update { it.copy(error = "Title and content required") }; return
+        }
         viewModelScope.launch {
-            _s.update { it.copy(isSaving = true, error = null) }
-            val ep = Episode(storyId = storyId, authorId = authorId, chapterNumber = chapterNumber,
-                title = s.epTitle, content = s.epContent, status = if (publish) "PUBLISHED" else "DRAFT")
+            _s.update { it.copy(isSaving = true) }
+            val ep = Episode(storyId = storyId, authorId = authorId,
+                chapterNumber = chapterNumber, title = s.epTitle, content = s.epContent,
+                status = if (publish) "PUBLISHED" else "DRAFT")
             when (val r = storyRepo.saveEpisode(ep)) {
-                is Resource.Success -> _s.update { it.copy(isSaving = false, savedEpisodeId = r.data) }
+                is Resource.Success -> _s.update { it.copy(isSaving = false, savedEpisodeId = r.data,
+                    epTitle = "", epContent = "", wordCount = 0) }
                 is Resource.Error   -> _s.update { it.copy(isSaving = false, error = r.message) }
                 else -> Unit
             }
         }
     }
+
     fun resetSaved()   = _s.update { it.copy(savedStoryId = null, savedEpisodeId = null) }
     fun clearMessage() = _s.update { it.copy(message = null) }
     fun clearError()   = _s.update { it.copy(error = null) }
 }
 
-// ── Poems ─────────────────────────────────────────────────────────────────────
+// ── Writer Dashboard ───────────────────────────────────────────────────────────
+data class WriterDashboardUiState(
+    val stats: WriterStats? = null,
+    val stories: List<Story> = emptyList(),
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+
+@HiltViewModel
+class WriterDashboardViewModel @Inject constructor(
+    private val storyRepo: StoryRepository
+) : ViewModel() {
+    private val _s = MutableStateFlow(WriterDashboardUiState()); val state = _s.asStateFlow()
+
+    fun load(authorId: String) = viewModelScope.launch {
+        _s.update { it.copy(isLoading = true) }
+        val stats   = (storyRepo.getWriterStats(authorId) as? Resource.Success)?.data
+        val stories = (storyRepo.getAuthorStories(authorId) as? Resource.Success)?.data ?: emptyList()
+        _s.update { it.copy(stats = stats, stories = stories, isLoading = false) }
+    }
+}
+
+// ── Author Profile ─────────────────────────────────────────────────────────────
+data class AuthorProfileUiState(
+    val author: User? = null,
+    val stories: List<Story> = emptyList(),
+    val poems: List<Poem> = emptyList(),
+    val isLoading: Boolean = false
+)
+
+@HiltViewModel
+class AuthorProfileViewModel @Inject constructor(
+    private val storyRepo: StoryRepository,
+    private val poemRepo: PoemRepository
+) : ViewModel() {
+    private val _s = MutableStateFlow(AuthorProfileUiState()); val state = _s.asStateFlow()
+
+    fun load(authorId: String) = viewModelScope.launch {
+        _s.update { it.copy(isLoading = true) }
+        val author  = (storyRepo.getAuthorProfile(authorId) as? Resource.Success)?.data
+        val stories = (storyRepo.getAuthorStories(authorId) as? Resource.Success)?.data
+            ?.filter { it.status == "PUBLISHED" } ?: emptyList()
+        val poems   = (poemRepo.getAuthorPoems(authorId) as? Resource.Success)?.data ?: emptyList()
+        _s.update { it.copy(author = author, stories = stories, poems = poems, isLoading = false) }
+    }
+}
+
+// ── Poems ──────────────────────────────────────────────────────────────────────
 data class PoemsUiState(
     val poems: List<Poem> = emptyList(),
+    val myPoems: List<Poem> = emptyList(),
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
     val hasMore: Boolean = true,
@@ -283,9 +472,8 @@ data class PoemsUiState(
     val selectedFormat: String? = null,
     val selectedLanguage: String? = null,
     val selectedMood: String? = null,
-    // Write poem state
     val showWriteSheet: Boolean = false,
-    val editingPoem: Poem? = null,        // non-null = editing existing poem
+    val editingPoem: Poem? = null,
     val poemTitle: String = "",
     val poemContent: String = "",
     val poemFormat: String = "Free verse",
@@ -294,29 +482,20 @@ data class PoemsUiState(
     val wordCount: Int = 0,
     val isSaving: Boolean = false,
     val savedPoemId: String? = null,
-    val message: String? = null,
-    // My poems
-    val myPoems: List<Poem> = emptyList(),
-    val isLoadingMyPoems: Boolean = false
+    val message: String? = null
 )
 
 @HiltViewModel
 class PoemsViewModel @Inject constructor(private val poemRepo: PoemRepository) : ViewModel() {
     private val _s = MutableStateFlow(PoemsUiState()); val state = _s.asStateFlow()
-    val formats   = KathakarMeta.POEM_FORMATS
-    val languages = KathakarMeta.LANGUAGES
-    val moods     = KathakarMeta.POEM_MOODS
-    private var cursor: DocumentSnapshot? = null
-    private var searchJob: Job? = null
-
+    val formats = KathakarMeta.POEM_FORMATS; val moods = KathakarMeta.POEM_MOODS
+    private var cursor: DocumentSnapshot? = null; private var searchJob: Job? = null
     private var preferredLanguages: List<String> = emptyList()
 
     fun setPreferredLanguages(langs: List<String>) {
         if (langs == preferredLanguages) return
-        preferredLanguages = langs
-        load(reset = true)
+        preferredLanguages = langs; load(reset = true)
     }
-
     init { load() }
 
     fun load(reset: Boolean = true) {
@@ -344,18 +523,13 @@ class PoemsViewModel @Inject constructor(private val poemRepo: PoemRepository) :
         try {
             val r = poemRepo.getPoems(format, null, mood, null)
             if (r is Resource.Success) {
-                val all       = r.data.first
+                val all = r.data.first
                 val preferred = all.filter { it.language in preferredLanguages }
                 val others    = all.filter { it.language !in preferredLanguages }
-                val combined  = preferred + others
-                _s.update { it.copy(poems = combined.take(30), hasMore = combined.size > 30,
-                    isLoading = false, isLoadingMore = false) }
-            } else {
-                _s.update { it.copy(isLoading = false, error = (r as? Resource.Error)?.message) }
-            }
-        } catch (e: Exception) {
-            _s.update { it.copy(isLoading = false, error = e.localizedMessage) }
-        }
+                _s.update { it.copy(poems = (preferred + others).take(30),
+                    hasMore = false, isLoading = false, isLoadingMore = false) }
+            } else _s.update { it.copy(isLoading = false, error = (r as? Resource.Error)?.message) }
+        } catch (e: Exception) { _s.update { it.copy(isLoading = false, error = e.localizedMessage) } }
     }
 
     fun onSearch(q: String) {
@@ -368,99 +542,81 @@ class PoemsViewModel @Inject constructor(private val poemRepo: PoemRepository) :
                 else -> Unit
             } }
     }
-
     fun onFormatFilter(f: String?)   { _s.update { it.copy(selectedFormat = f) };   load() }
     fun onLanguageFilter(l: String?) { _s.update { it.copy(selectedLanguage = l) }; load() }
     fun onMoodFilter(m: String?)     { _s.update { it.copy(selectedMood = m) };     load() }
     fun loadMore()                   = load(reset = false)
     fun refresh()                    = load(reset = true)
 
-    // Write sheet controls
     fun openWriteSheet(poem: Poem? = null) {
-        if (poem != null) {
-            _s.update { it.copy(showWriteSheet = true, editingPoem = poem,
-                poemTitle = poem.title, poemContent = poem.content,
-                poemFormat = poem.format, poemLanguage = poem.language, poemMood = poem.mood,
-                wordCount = poem.content.trim().split("\\s+".toRegex()).filter { w -> w.isNotEmpty() }.size) }
-        } else {
-            _s.update { it.copy(showWriteSheet = true, editingPoem = null,
-                poemTitle = "", poemContent = "", poemFormat = "Free verse",
-                poemLanguage = "en", poemMood = "Love", wordCount = 0) }
-        }
+        _s.update { it.copy(showWriteSheet = true, editingPoem = poem,
+            poemTitle = poem?.title ?: "", poemContent = poem?.content ?: "",
+            poemFormat = poem?.format ?: "Free verse",
+            poemLanguage = poem?.language ?: "en", poemMood = poem?.mood ?: "Love",
+            wordCount = poem?.content?.split("\\s+".toRegex())?.count { w -> w.isNotEmpty() } ?: 0) }
     }
     fun closeWriteSheet() = _s.update { it.copy(showWriteSheet = false, editingPoem = null) }
-
-    fun onPoemTitleChange(v: String)    = _s.update { it.copy(poemTitle = v) }
+    fun onPoemTitleChange(v: String)   = _s.update { it.copy(poemTitle = v) }
     fun onPoemContentChange(v: String) {
-        val wc = v.trim().split("\\s+".toRegex()).filter { it.isNotEmpty() }.size
+        val wc = v.trim().split("\\s+".toRegex()).count { it.isNotEmpty() }
         _s.update { it.copy(poemContent = v, wordCount = wc) }
     }
-    fun onPoemFormatChange(v: String)   = _s.update { it.copy(poemFormat = v) }
-    fun onPoemLanguageChange(v: String) = _s.update { it.copy(poemLanguage = v) }
-    fun onPoemMoodChange(v: String)     = _s.update { it.copy(poemMood = v) }
+    fun onPoemFormatChange(v: String)  = _s.update { it.copy(poemFormat = v) }
+    fun onPoemLanguageChange(v: String)= _s.update { it.copy(poemLanguage = v) }
+    fun onPoemMoodChange(v: String)    = _s.update { it.copy(poemMood = v) }
 
     fun savePoem(authorId: String, authorName: String) {
         val s = _s.value
-        if (s.poemTitle.isBlank() || s.poemContent.isBlank()) {
-            _s.update { it.copy(error = "Title and poem content required") }; return }
+        if (s.poemTitle.isBlank() || s.poemContent.isBlank()) return
         viewModelScope.launch {
-            _s.update { it.copy(isSaving = true, error = null) }
+            _s.update { it.copy(isSaving = true) }
             val editing = s.editingPoem
-            val result = if (editing != null) {
+            if (editing != null) {
                 poemRepo.updatePoem(editing.poemId, s.poemTitle, s.poemContent,
                     s.poemFormat, s.poemLanguage, s.poemMood)
-                Resource.Success(editing.poemId)
+                _s.update { it.copy(isSaving = false, showWriteSheet = false, editingPoem = null,
+                    message = "Poem updated!") }
+                load(true)
             } else {
-                poemRepo.savePoem(Poem(title = s.poemTitle, content = s.poemContent,
+                val poem = Poem(title = s.poemTitle, content = s.poemContent,
                     authorId = authorId, authorName = authorName,
-                    format = s.poemFormat, language = s.poemLanguage, mood = s.poemMood))
-            }
-            when (result) {
-                is Resource.Success -> {
-                    _s.update { it.copy(isSaving = false, savedPoemId = result.data,
-                        showWriteSheet = false, editingPoem = null,
-                        message = if (editing != null) "Poem updated!" else "Poem published!") }
-                    load(reset = true) // refresh feed
+                    format = s.poemFormat, language = s.poemLanguage, mood = s.poemMood)
+                when (val r = poemRepo.savePoem(poem)) {
+                    is Resource.Success -> { _s.update { it.copy(isSaving = false, showWriteSheet = false,
+                        savedPoemId = r.data, message = "Poem published!") }; load(true) }
+                    is Resource.Error   -> _s.update { it.copy(isSaving = false, message = r.message) }
+                    else -> Unit
                 }
-                is Resource.Error -> _s.update { it.copy(isSaving = false, error = result.message) }
-                else -> Unit
             }
         }
     }
 
     fun deletePoem(poemId: String, authorId: String) = viewModelScope.launch {
-        when (poemRepo.deletePoem(poemId, authorId)) {
-            is Resource.Success -> { _s.update { it.copy(message = "Poem deleted") }; load(reset = true) }
-            is Resource.Error   -> _s.update { it.copy(error = "Delete failed") }
-            else -> Unit
-        }
+        poemRepo.deletePoem(poemId, authorId)
+        _s.update { it.copy(poems = it.poems.filter { p -> p.poemId != poemId }, message = "Poem deleted") }
     }
 
     fun loadMyPoems(authorId: String) = viewModelScope.launch {
-        _s.update { it.copy(isLoadingMyPoems = true) }
         when (val r = poemRepo.getAuthorPoems(authorId)) {
-            is Resource.Success -> _s.update { it.copy(myPoems = r.data, isLoadingMyPoems = false) }
-            else -> _s.update { it.copy(isLoadingMyPoems = false) }
+            is Resource.Success -> _s.update { it.copy(myPoems = r.data) }
+            else -> Unit
         }
     }
-
     fun clearMessage() = _s.update { it.copy(message = null) }
     fun clearError()   = _s.update { it.copy(error = null) }
     fun resetSaved()   = _s.update { it.copy(savedPoemId = null) }
 }
 
-// ── Poem Detail (Like + Tip) ──────────────────────────────────────────────────
+// ── Poem Detail ────────────────────────────────────────────────────────────────
 data class PoemDetailUiState(
     val poem: Poem? = null,
     val isLoading: Boolean = false,
     val isLiked: Boolean = false,
-    val isLiking: Boolean = false,
-    val isTipping: Boolean = false,
-    val selectedTip: Int = 1,
     val showTipDialog: Boolean = false,
-    val newCoinBalance: Int? = null,
+    val selectedTip: Int = MvpConfig.POEM_TIP_MIN,
+    val error: String? = null,
     val message: String? = null,
-    val error: String? = null
+    val newBalance: Int? = null
 )
 
 @HiltViewModel
@@ -469,125 +625,155 @@ class PoemDetailViewModel @Inject constructor(private val poemRepo: PoemReposito
 
     fun load(poemId: String, userId: String) = viewModelScope.launch {
         _s.update { it.copy(isLoading = true) }
-        val poem  = (poemRepo.getPoem(poemId) as? Resource.Success)?.data
-        val liked = poemRepo.isLiked(userId, poemId)
-        _s.update { it.copy(poem = poem, isLiked = liked, isLoading = false) }
+        val poem    = (poemRepo.getPoem(poemId) as? Resource.Success)?.data
+        val isLiked = poemRepo.isLiked(userId, poemId)
+        _s.update { it.copy(poem = poem, isLoading = false, isLiked = isLiked) }
     }
 
     fun toggleLike(userId: String, poemId: String) = viewModelScope.launch {
-        _s.update { it.copy(isLiking = true) }
-        when (val r = poemRepo.toggleLike(userId, poemId)) {
-            is Resource.Success -> {
-                val newCount = (_s.value.poem?.likesCount ?: 0) + (if (r.data) 1 else -1)
-                _s.update { it.copy(isLiking = false, isLiked = r.data,
-                    poem = it.poem?.copy(likesCount = newCount)) }
-            }
-            else -> _s.update { it.copy(isLiking = false) }
+        val r = poemRepo.toggleLike(userId, poemId)
+        if (r is Resource.Success) {
+            val liked = r.data
+            _s.update { it.copy(isLiked = liked,
+                poem = it.poem?.copy(likesCount = if (liked) (it.poem.likesCount + 1) else (it.poem.likesCount - 1))) }
         }
     }
 
-    fun openTipDialog()              = _s.update { it.copy(showTipDialog = true) }
-    fun closeTipDialog()             = _s.update { it.copy(showTipDialog = false) }
-    fun onTipChange(coins: Int)      = _s.update { it.copy(selectedTip = coins) }
+    fun openTipDialog()         = _s.update { it.copy(showTipDialog = true) }
+    fun closeTipDialog()        = _s.update { it.copy(showTipDialog = false) }
+    fun onTipChange(c: Int)     = _s.update { it.copy(selectedTip = c) }
 
     fun sendTip(fromUserId: String, toUserId: String) = viewModelScope.launch {
         val poem = _s.value.poem ?: return@launch
-        val coins = _s.value.selectedTip
-        _s.update { it.copy(isTipping = true, showTipDialog = false) }
-        when (val r = poemRepo.tipPoet(fromUserId, toUserId, poem, coins)) {
-            is Resource.Success -> _s.update { it.copy(isTipping = false,
-                newCoinBalance = r.data,
-                message = "You tipped " + coins + " coin" + (if (coins > 1) "s" else "") + "!",
-                poem = it.poem?.copy(tipsCount = (it.poem.tipsCount) + 1,
-                    totalTipsCoins = (it.poem.totalTipsCoins) + coins)) }
-            is Resource.Error   -> _s.update { it.copy(isTipping = false, error = r.message) }
+        when (val r = poemRepo.tipPoet(fromUserId, toUserId, poem, _s.value.selectedTip)) {
+            is Resource.Success -> _s.update { it.copy(showTipDialog = false, newBalance = r.data,
+                message = "Tipped ${it.selectedTip} coin${if (it.selectedTip > 1) "s" else ""}! 🎉",
+                poem = it.poem?.copy(tipsCount = it.poem.tipsCount + 1,
+                    totalTipsCoins = it.poem.totalTipsCoins + it.selectedTip)) }
+            is Resource.Error   -> _s.update { it.copy(showTipDialog = false, error = r.message) }
             else -> Unit
         }
     }
-
     fun clearMessage() = _s.update { it.copy(message = null) }
     fun clearError()   = _s.update { it.copy(error = null) }
 }
 
-// ── Library ───────────────────────────────────────────────────────────────────
-data class LibraryUiState(val entries: List<LibraryEntry> = emptyList(), val isLoading: Boolean = false)
+// ── Library ────────────────────────────────────────────────────────────────────
+data class LibraryUiState(
+    val entries: List<LibraryEntry> = emptyList(),
+    val progress: List<ReadingProgress> = emptyList(),
+    val isLoading: Boolean = false
+)
 
 @HiltViewModel
-class LibraryViewModel @Inject constructor(private val libRepo: LibraryRepository) : ViewModel() {
+class LibraryViewModel @Inject constructor(
+    private val libRepo: LibraryRepository,
+    private val storyRepo: StoryRepository
+) : ViewModel() {
     private val _s = MutableStateFlow(LibraryUiState()); val state = _s.asStateFlow()
+
     fun load(userId: String) = viewModelScope.launch {
         _s.update { it.copy(isLoading = true) }
-        when (val r = libRepo.getUserLibrary(userId)) {
-            is Resource.Success -> _s.update { it.copy(entries = r.data, isLoading = false) }
-            else -> _s.update { it.copy(isLoading = false) }
-        }
+        val entries   = (libRepo.getUserLibrary(userId) as? Resource.Success)?.data ?: emptyList()
+        val progress  = (storyRepo.getReadingProgress(userId) as? Resource.Success)?.data ?: emptyList()
+        _s.update { it.copy(entries = entries.filter { e -> e.isBookmarked },
+            progress = progress, isLoading = false) }
     }
 }
 
-// ── Profile ───────────────────────────────────────────────────────────────────
-data class ProfileUiState(val coinHistory: List<CoinTransaction> = emptyList(), val isLoading: Boolean = false)
+// ── Profile ────────────────────────────────────────────────────────────────────
+data class ProfileUiState(
+    val coinHistory: List<CoinTransaction> = emptyList(),
+    val isLoading: Boolean = false
+)
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(private val coinRepo: CoinRepository) : ViewModel() {
     private val _s = MutableStateFlow(ProfileUiState()); val state = _s.asStateFlow()
+
     fun load(userId: String) = viewModelScope.launch {
         _s.update { it.copy(isLoading = true) }
-        val h = (coinRepo.getCoinHistory(userId) as? Resource.Success)?.data ?: emptyList()
-        _s.update { it.copy(coinHistory = h, isLoading = false) }
+        when (val r = coinRepo.getCoinHistory(userId)) {
+            is Resource.Success -> _s.update { it.copy(coinHistory = r.data, isLoading = false) }
+            is Resource.Error   -> _s.update { it.copy(isLoading = false) }
+            else -> Unit
+        }
     }
 }
 
-// ── Follow ────────────────────────────────────────────────────────────────────
+// ── Notifications ──────────────────────────────────────────────────────────────
+data class NotificationUiState(
+    val notifications: List<Notification> = emptyList(),
+    val unreadCount: Int = 0,
+    val isLoading: Boolean = false
+)
+
+@HiltViewModel
+class NotificationViewModel @Inject constructor(
+    private val notifRepo: NotificationRepository
+) : ViewModel() {
+    private val _s = MutableStateFlow(NotificationUiState()); val state = _s.asStateFlow()
+
+    fun load(userId: String) = viewModelScope.launch {
+        _s.update { it.copy(isLoading = true) }
+        val notifs = (notifRepo.getNotifications(userId) as? Resource.Success)?.data ?: emptyList()
+        val unread = notifs.count { !it.isRead }
+        _s.update { it.copy(notifications = notifs, unreadCount = unread, isLoading = false) }
+    }
+
+    fun markAllRead(userId: String) = viewModelScope.launch {
+        notifRepo.markAllRead(userId)
+        _s.update { it.copy(notifications = it.notifications.map { n -> n.copy(isRead = true) },
+            unreadCount = 0) }
+    }
+}
+
+// ── Follow ─────────────────────────────────────────────────────────────────────
 data class FollowUiState(val isFollowing: Boolean = false, val isLoading: Boolean = false)
 
 @HiltViewModel
 class FollowViewModel @Inject constructor(private val followRepo: FollowRepository) : ViewModel() {
     private val _s = MutableStateFlow(FollowUiState()); val state = _s.asStateFlow()
+
     fun check(followerId: String, followeeId: String) = viewModelScope.launch {
-        _s.update { it.copy(isFollowing = followRepo.isFollowing(followerId, followeeId)) }
+        val r = followRepo.isFollowing(followerId, followeeId)
+        _s.update { it.copy(isFollowing = r is Resource.Success && r.data) }
     }
+
     fun toggle(followerId: String, followeeId: String) = viewModelScope.launch {
         _s.update { it.copy(isLoading = true) }
-        when (val r = followRepo.toggleFollow(followerId, followeeId)) {
-            is Resource.Success -> _s.update { it.copy(isFollowing = r.data, isLoading = false) }
-            else -> _s.update { it.copy(isLoading = false) }
-        }
+        val r = followRepo.toggleFollow(followerId, followeeId)
+        if (r is Resource.Success) _s.update { it.copy(isFollowing = r.data, isLoading = false) }
+        else _s.update { it.copy(isLoading = false) }
     }
 }
 
-// ── Admin ─────────────────────────────────────────────────────────────────────
+// ── Admin ──────────────────────────────────────────────────────────────────────
 data class AdminUiState(
-    val stats: AdminStats = AdminStats(), val users: List<User> = emptyList(),
-    val stories: List<Story> = emptyList(), val isLoading: Boolean = false,
-    val message: String? = null, val selectedTab: Int = 0
+    val stats: AdminStats = AdminStats(),
+    val users: List<User> = emptyList(),
+    val stories: List<Story> = emptyList(),
+    val isLoading: Boolean = false,
+    val selectedTab: Int = 0,
+    val message: String? = null
 )
 
 @HiltViewModel
 class AdminViewModel @Inject constructor(private val adminRepo: AdminRepository) : ViewModel() {
     private val _s = MutableStateFlow(AdminUiState()); val state = _s.asStateFlow()
+
     fun load() = viewModelScope.launch {
         _s.update { it.copy(isLoading = true) }
-        val stats   = adminRepo.getStats()
-        val users   = (adminRepo.getAllUsers()   as? Resource.Success)?.data ?: emptyList()
+        val stats   = (adminRepo.getStats() as? Resource.Success)?.data ?: AdminStats()
+        val users   = (adminRepo.getAllUsers() as? Resource.Success)?.data ?: emptyList()
         val stories = (adminRepo.getAllStories() as? Resource.Success)?.data ?: emptyList()
         _s.update { it.copy(stats = stats, users = users, stories = stories, isLoading = false) }
     }
-    fun onTabChange(tab: Int) = _s.update { it.copy(selectedTab = tab) }
-    fun updateRole(userId: String, role: UserRole) = viewModelScope.launch {
-        adminRepo.updateUserRole(userId, role); _s.update { it.copy(message = "Role updated") }; load()
-    }
-    fun toggleBan(userId: String, banned: Boolean) = viewModelScope.launch {
-        adminRepo.toggleBan(userId, !banned)
-        _s.update { it.copy(message = if (!banned) "User banned" else "User unbanned") }; load()
-    }
-    fun suspendStory(storyId: String) = viewModelScope.launch {
-        adminRepo.updateStoryStatus(storyId, "SUSPENDED"); _s.update { it.copy(message = "Story suspended") }; load()
-    }
-    fun restoreStory(storyId: String) = viewModelScope.launch {
-        adminRepo.updateStoryStatus(storyId, "PUBLISHED"); _s.update { it.copy(message = "Story restored") }; load()
-    }
-    fun deleteStory(storyId: String) = viewModelScope.launch {
-        adminRepo.deleteStory(storyId); _s.update { it.copy(message = "Story deleted") }; load()
-    }
-    fun clearMessage() = _s.update { it.copy(message = null) }
+    fun onTabChange(tab: Int)                          = _s.update { it.copy(selectedTab = tab) }
+    fun updateRole(userId: String, role: UserRole)     = viewModelScope.launch { adminRepo.updateRole(userId, role); load() }
+    fun toggleBan(userId: String, banned: Boolean)     = viewModelScope.launch { adminRepo.toggleBan(userId, banned); load() }
+    fun suspendStory(storyId: String)                  = viewModelScope.launch { adminRepo.suspendStory(storyId); load() }
+    fun restoreStory(storyId: String)                  = viewModelScope.launch { adminRepo.restoreStory(storyId); load() }
+    fun deleteStory(storyId: String)                   = viewModelScope.launch { adminRepo.deleteStory(storyId); load() }
+    fun clearMessage()                                 = _s.update { it.copy(message = null) }
 }
