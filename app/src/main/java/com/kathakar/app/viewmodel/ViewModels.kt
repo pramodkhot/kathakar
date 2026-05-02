@@ -56,6 +56,88 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
     }
 }
 
+// ── Reading Challenge ──────────────────────────────────────────────────────────
+data class ReadingChallengeUiState(
+    val challenge: com.kathakar.app.domain.model.ReadingChallenge? = null,
+    val isLoading: Boolean = false,
+    val showGoalPicker: Boolean = false
+)
+
+@HiltViewModel
+class ReadingChallengeViewModel @Inject constructor(
+    private val db: com.google.firebase.firestore.FirebaseFirestore
+) : ViewModel() {
+    private val _s = MutableStateFlow(ReadingChallengeUiState()); val state = _s.asStateFlow()
+
+    fun load(userId: String) = viewModelScope.launch {
+        _s.update { it.copy(isLoading = true) }
+        try {
+            val snap = db.collection("reading_challenges").document(userId).get().await()
+            val challenge = if (snap.exists()) {
+                val data = snap.data ?: emptyMap<String, Any>()
+                val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                    .format(java.util.Date())
+                val lastDate = data["lastReadDate"] as? String ?: ""
+                val todayPages = if (lastDate == todayStr)
+                    ((data["todayPagesRead"] as? Long) ?: 0L).toInt() else 0
+                com.kathakar.app.domain.model.ReadingChallenge(
+                    userId         = userId,
+                    dailyPageGoal  = ((data["dailyPageGoal"] as? Long) ?: 20L).toInt(),
+                    todayPagesRead = todayPages,
+                    totalPagesRead = (data["totalPagesRead"] as? Long) ?: 0L,
+                    lastReadDate   = lastDate)
+            } else {
+                com.kathakar.app.domain.model.ReadingChallenge(userId = userId)
+            }
+            _s.update { it.copy(challenge = challenge, isLoading = false) }
+        } catch (e: Exception) {
+            _s.update { it.copy(isLoading = false) }
+        }
+    }
+
+    // Called every time a page is turned in the reader
+    fun recordPageRead(userId: String) = viewModelScope.launch {
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            .format(java.util.Date())
+        try {
+            val ref = db.collection("reading_challenges").document(userId)
+            val snap = ref.get().await()
+            val lastDate = snap.getString("lastReadDate") ?: ""
+            val updates = hashMapOf<String, Any>(
+                "userId"        to userId,
+                "lastReadDate"  to today,
+                "totalPagesRead" to com.google.firebase.firestore.FieldValue.increment(1),
+                "todayPagesRead" to if (lastDate == today)
+                    com.google.firebase.firestore.FieldValue.increment(1) else 1L
+            )
+            ref.set(updates, com.google.firebase.firestore.SetOptions.merge()).await()
+            // Update local state
+            _s.update { st ->
+                val current = st.challenge ?: return@update st
+                val isToday = current.lastReadDate == today
+                st.copy(challenge = current.copy(
+                    todayPagesRead = if (isToday) current.todayPagesRead + 1 else 1,
+                    totalPagesRead = current.totalPagesRead + 1,
+                    lastReadDate   = today))
+            }
+        } catch (_: Exception) { }
+    }
+
+    fun setDailyGoal(userId: String, goal: Int) = viewModelScope.launch {
+        try {
+            db.collection("reading_challenges").document(userId)
+                .set(mapOf("dailyPageGoal" to goal, "userId" to userId),
+                    com.google.firebase.firestore.SetOptions.merge()).await()
+            _s.update { it.copy(challenge = it.challenge?.copy(dailyPageGoal = goal),
+                showGoalPicker = false) }
+        } catch (_: Exception) { }
+    }
+
+    fun openGoalPicker()  = _s.update { it.copy(showGoalPicker = true) }
+    fun closeGoalPicker() = _s.update { it.copy(showGoalPicker = false) }
+}
+
+
 // ── Home ───────────────────────────────────────────────────────────────────────
 data class HomeUiState(
     val stories: List<Story> = emptyList(),
