@@ -133,6 +133,42 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
 }
 
 // ── Home (Stories) ────────────────────────────────────────────────────────────
+// ── Reusable UserAvatar composable ───────────────────────────────────────────
+// Shows profile photo if available, falls back to initials circle
+// Use this EVERYWHERE a user/author avatar is needed
+@Composable
+fun UserAvatar(
+    photoUrl: String,
+    initials: String,
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    if (photoUrl.isNotEmpty()) {
+        AsyncImage(
+            model = photoUrl,
+            contentDescription = "Profile",
+            modifier = modifier.size(size).clip(RoundedCornerShape(50)),
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = RoundedCornerShape(50),
+            modifier = modifier.size(size)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = initials,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = (size.value * 0.35).sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+    }
+}
+
+
 // ── Reading Challenge Widget ───────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -282,11 +318,7 @@ fun HomeScreen(user: User, onStoryClick: (String) -> Unit, onWriteClick: () -> U
                 }
                 // Profile avatar
                 IconButton(onClick = onProfileClick) {
-                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(50)) {
-                        Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                            Text(text = user.initials, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        }
-                    }
+                    UserAvatar(photoUrl = user.photoUrl, initials = user.initials, size = 32.dp)
                 }
             }) },
         bottomBar = { KathakarBottomNav(0, onRead = {}, onWrite = onWriteClick, onPoems = onPoemsClick, onLibrary = onLibraryClick, onProfile = onProfileClick) }
@@ -1943,12 +1975,10 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                             Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                                 .clickable { if (!isAuthor) onAuthorClick(authorId) },
                                 verticalAlignment = Alignment.CenterVertically) {
-                                Surface(color = MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(50)) {
-                                    Text(poem.authorName.take(1).uppercase(),
-                                        modifier = Modifier.padding(10.dp),
-                                        fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                                UserAvatar(
+                                    photoUrl = state.authorPhotoUrl,
+                                    initials = poem.authorName.take(1).uppercase(),
+                                    size = 40.dp)
                                 Spacer(Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(poem.authorName, fontWeight = FontWeight.Medium,
@@ -2226,19 +2256,7 @@ fun ProfileScreen(user: User, onSignOut: () -> Unit, onBuyCoins: () -> Unit, onS
                 // ── Profile header ─────────────────────────────────────
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Avatar — photo or initials
-                    if (user.photoUrl.isNotEmpty()) {
-                        AsyncImage(model = user.photoUrl, contentDescription = "Profile",
-                            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(50)),
-                            contentScale = ContentScale.Crop)
-                    } else {
-                        Surface(color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(50), modifier = Modifier.size(72.dp)) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(user.initials, fontWeight = FontWeight.Medium,
-                                    fontSize = 26.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            }
-                        }
-                    }
+                    UserAvatar(photoUrl = user.photoUrl, initials = user.initials, size = 72.dp)
                     Spacer(Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(text = user.name, fontWeight = FontWeight.Medium, fontSize = 17.sp)
@@ -2380,19 +2398,13 @@ fun EditProfileScreen(
                     Box(modifier = Modifier.size(90.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
-                } else if (user.photoUrl.isNotEmpty()) {
-                    AsyncImage(model = user.photoUrl, contentDescription = "Profile",
-                        modifier = Modifier.size(90.dp).clip(RoundedCornerShape(50)),
-                        contentScale = ContentScale.Crop)
                 } else {
-                    Surface(color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(50),
-                        modifier = Modifier.size(90.dp)) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(user.initials, fontSize = 32.sp, fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        }
-                    }
+                    // Use UserAvatar which handles photo/initials automatically
+                    UserAvatar(
+                        photoUrl = user.photoUrl,
+                        initials = user.initials,
+                        size     = 90.dp
+                    )
                 }
                 // Edit badge
                 Surface(color = MaterialTheme.colorScheme.primary,
