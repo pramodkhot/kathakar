@@ -2321,33 +2321,7 @@ fun ProfileScreen(user: User, onSignOut: () -> Unit, onBuyCoins: () -> Unit, onS
                     }
                 }
             }
-            // Coin history preview — last 3 transactions
-            if (state.coinHistory.isNotEmpty()) {
-                item {
-                    Row(modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.coin_history),
-                            fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                        TextButton(onClick = onCoinDetails) { Text("See all →", fontSize = 12.sp) }
-                    }
-                }
-                items(state.coinHistory.take(3)) { txn ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text(txn.note.ifEmpty { txn.type.name.replace("_", " ").lowercase()
-                            .replaceFirstChar { c -> c.uppercase() } },
-                            fontSize = 12.sp, modifier = Modifier.weight(1f),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text((if (txn.coinsAmount < 0) "" else "+") + "${txn.coinsAmount} coins",
-                            fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                            color = if (txn.coinsAmount < 0) MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.tertiary)
-                    }
-                    HorizontalDivider()
-                }
-            }
+
         }
     }
 }
@@ -2369,7 +2343,7 @@ fun EditProfileScreen(
     onBack: () -> Unit,
     onSaved: (name: String, bio: String) -> Unit,
     vm: ProfileViewModel = hiltViewModel(),
-    authVm: AuthViewModel = hiltViewModel()
+    authVm: AuthViewModel
 ) {
     val state   = vm.state.collectAsState().value
     val context = LocalContext.current
