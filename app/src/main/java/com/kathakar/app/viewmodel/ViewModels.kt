@@ -788,6 +788,7 @@ data class PoemDetailUiState(
     val isLiked: Boolean = false,
     val showTipDialog: Boolean = false,
     val selectedTip: Int = MvpConfig.POEM_TIP_MIN,
+    val authorPhotoUrl: String = "",  // loaded alongside poem
     val error: String? = null,
     val message: String? = null,
     val newBalance: Int? = null
@@ -801,7 +802,16 @@ class PoemDetailViewModel @Inject constructor(private val poemRepo: PoemReposito
         _s.update { it.copy(isLoading = true) }
         val poem    = (poemRepo.getPoem(poemId) as? Resource.Success)?.data
         val isLiked = poemRepo.isLiked(userId, poemId)
-        _s.update { it.copy(poem = poem, isLoading = false, isLiked = isLiked) }
+        // Fetch author photo URL for display in poem detail
+        val authorPhoto = if (poem?.authorId?.isNotEmpty() == true) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("users").document(poem.authorId).get().await()
+                doc.getString("photoUrl") ?: ""
+            } catch (_: Exception) { "" }
+        } else ""
+        _s.update { it.copy(poem = poem, isLoading = false, isLiked = isLiked,
+            authorPhotoUrl = authorPhoto) }
     }
 
     fun toggleLike(userId: String, poemId: String) = viewModelScope.launch {
