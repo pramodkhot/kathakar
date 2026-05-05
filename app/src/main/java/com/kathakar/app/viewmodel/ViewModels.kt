@@ -852,11 +852,23 @@ class LibraryViewModel @Inject constructor(
 // ── Profile ────────────────────────────────────────────────────────────────────
 data class ProfileUiState(
     val coinHistory: List<CoinTransaction> = emptyList(),
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    // Edit profile state
+    val isEditingProfile: Boolean = false,
+    val editName: String = "",
+    val editBio: String = "",
+    val isSavingProfile: Boolean = false,
+    val isUploadingPhoto: Boolean = false,
+    val profileSaveSuccess: Boolean = false,
+    val error: String? = null
 )
 
 @HiltViewModel
-class ProfileViewModel @Inject constructor(private val coinRepo: CoinRepository) : ViewModel() {
+class ProfileViewModel @Inject constructor(
+    private val coinRepo: CoinRepository,
+    private val db: com.google.firebase.firestore.FirebaseFirestore,
+    private val storage: com.google.firebase.storage.FirebaseStorage
+) : ViewModel() {
     private val _s = MutableStateFlow(ProfileUiState()); val state = _s.asStateFlow()
 
     fun load(userId: String) = viewModelScope.launch {
@@ -866,6 +878,49 @@ class ProfileViewModel @Inject constructor(private val coinRepo: CoinRepository)
             is Resource.Error   -> _s.update { it.copy(isLoading = false) }
             else -> Unit
         }
+    }
+
+    fun openEditProfile(user: com.kathakar.app.domain.model.User) {
+        _s.update { it.copy(isEditingProfile = true, editName = user.name, editBio = user.bio, error = null) }
+    }
+    fun closeEditProfile() = _s.update { it.copy(isEditingProfile = false, profileSaveSuccess = false) }
+    fun onEditName(v: String) = _s.update { it.copy(editName = v) }
+    fun onEditBio(v: String)  = _s.update { it.copy(editBio = v) }
+    fun clearError() = _s.update { it.copy(error = null) }
+
+    fun saveProfile(userId: String, name: String, bio: String) = viewModelScope.launch {
+        if (name.isBlank()) { _s.update { it.copy(error = "Name cannot be empty") }; return@launch }
+        _s.update { it.copy(isSavingProfile = true) }
+        try {
+            db.collection("users").document(userId)
+                .update(mapOf("name" to name.trim(), "bio" to bio.trim())).await()
+            _s.update { it.copy(isSavingProfile = false, profileSaveSuccess = true, isEditingProfile = false) }
+        } catch (e: Exception) {
+            _s.update { it.copy(isSavingProfile = false, error = e.localizedMessage) }
+        }
+    }
+
+    fun uploadProfilePhoto(userId: String, uri: android.net.Uri, onDone: (String) -> Unit) = viewModelScope.launch {
+        _s.update { it.copy(isUploadingPhoto = true) }
+        try {
+            val ref = storage.reference.child("profile_photos/$userId.jpg")
+            ref.putFile(uri).await()
+            val url = ref.downloadUrl.await().toString()
+            db.collection("users").document(userId)
+                .set(mapOf("photoUrl" to url), com.google.firebase.firestore.SetOptions.merge()).await()
+            _s.update { it.copy(isUploadingPhoto = false) }
+            onDone(url)
+        } catch (e: Exception) {
+            _s.update { it.copy(isUploadingPhoto = false, error = e.localizedMessage) }
+        }
+    }
+
+    fun removeProfilePhoto(userId: String, onDone: () -> Unit) = viewModelScope.launch {
+        try {
+            db.collection("users").document(userId)
+                .update("photoUrl", "").await()
+            onDone()
+        } catch (_: Exception) { }
     }
 }
 
