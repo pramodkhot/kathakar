@@ -1807,74 +1807,79 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
     val snackbar     = remember { SnackbarHostState() }
     val isAuthor     = user.userId == authorId
 
-    LaunchedEffect(poemId) { vm.load(poemId, user.userId) }
-    LaunchedEffect(authorId) { if (!isAuthor) followVm.check(user.userId, authorId) }
-    LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); vm.clearMessage() } }
-    LaunchedEffect(state.error)   { state.error?.let   { snackbar.showSnackbar(it); vm.clearError() } }
-
-    // Poem reader settings state (local — same UX as story reader)
+    // Reading settings — local state, same as story reader
     var isPoemNightMode  by remember { mutableStateOf(false) }
     var poemFontSize     by remember { mutableIntStateOf(20) }
     var showPoemSettings by remember { mutableStateOf(false) }
 
-    // Poem colors — explicit White for day, dark for night
+    // Colors — explicit White for day, dark for night
     val poemBg        = if (isPoemNightMode) Color(0xFF1A1A1A) else Color.White
     val poemTextColor = if (isPoemNightMode) Color(0xFFE0D5C5) else Color(0xFF1A1A1A)
     val poemSubColor  = if (isPoemNightMode) Color(0xFFB0A898) else Color(0xFF666666)
     val poemTopBar    = if (isPoemNightMode) Color(0xFF2A2A2A) else Color.White
 
+    LaunchedEffect(poemId)   { vm.load(poemId, user.userId) }
+    LaunchedEffect(authorId) { if (!isAuthor) followVm.check(user.userId, authorId) }
+    LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); vm.clearMessage() } }
+    LaunchedEffect(state.error)   { state.error?.let   { snackbar.showSnackbar(it); vm.clearError() } }
+
     Scaffold(
         snackbarHost   = { SnackbarHost(snackbar) },
         containerColor = poemBg,
-        topBar = { TopAppBar(
-            title = { Text(text = state.poem?.title ?: "", maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = poemTextColor) },
-            navigationIcon = { IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, null, tint = poemTextColor) } },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = poemTopBar),
-            actions = {
-                // Settings toggle — same as story reader
-                IconButton(onClick = { showPoemSettings = !showPoemSettings }) {
-                    Icon(Icons.Default.Settings, null,
-                        tint = if (showPoemSettings) MaterialTheme.colorScheme.primary
-                               else poemTextColor,
-                        modifier = Modifier.size(20.dp))
+        topBar = {
+            TopAppBar(
+                title = { Text(text = state.poem?.title ?: "", maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, color = poemTextColor) },
+                navigationIcon = { IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, null, tint = poemTextColor) } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = poemTopBar),
+                actions = {
+                    IconButton(onClick = { showPoemSettings = !showPoemSettings }) {
+                        Icon(Icons.Default.Settings, null,
+                            tint = if (showPoemSettings) MaterialTheme.colorScheme.primary
+                                   else poemTextColor,
+                            modifier = Modifier.size(20.dp))
+                    }
                 }
-            }) }
+            )
+        }
     ) { p ->
-        if (state.isLoading) { Box(modifier = Modifier.fillMaxSize().padding(p), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; return@Scaffold }
+        if (state.isLoading) {
+            Box(modifier = Modifier.fillMaxSize().padding(p), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
         val poem = state.poem ?: return@Scaffold
 
-        // Split poem into pages — ~12 lines per page
-        val poemLines    = poem.content.split("\n")
-        val linesPerPage = 12
-        val poemPages    = poemLines.chunked(linesPerPage).map { it.joinToString("\n") }
-        val poemPager    = androidx.compose.foundation.pager.rememberPagerState(pageCount = { maxOf(1, poemPages.size) })
-        val poemScope    = rememberCoroutineScope()
+        // Split poem into pages of 12 lines each
+        val poemLines      = poem.content.split("\n")
+        val linesPerPage   = 12
+        val poemPages      = poemLines.chunked(linesPerPage).map { it.joinToString("\n") }
         val totalPoemPages = maxOf(1, poemPages.size)
+        val poemPager      = androidx.compose.foundation.pager.rememberPagerState(
+            pageCount = { totalPoemPages })
+        val poemScope      = rememberCoroutineScope()
 
         Column(modifier = Modifier.fillMaxSize().padding(p).background(poemBg)) {
 
-            // ── Settings bar (collapsible — same as story reader) ────────
+            // ── Settings bar ────────────────────────────────────────────
             if (showPoemSettings) {
-                Surface(color = if (isPoemNightMode) Color(0xFF2A2A2A) else MaterialTheme.colorScheme.surfaceVariant) {
+                Surface(color = if (isPoemNightMode) Color(0xFF2A2A2A)
+                               else MaterialTheme.colorScheme.surfaceVariant) {
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // Font size
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("A", fontSize = 14.sp, color = poemTextColor, modifier = Modifier.width(24.dp))
-                            Slider(
-                                value = poemFontSize.toFloat(),
+                            Text("A", fontSize = 14.sp, color = poemTextColor,
+                                modifier = Modifier.width(24.dp))
+                            Slider(value = poemFontSize.toFloat(),
                                 onValueChange = { poemFontSize = it.toInt() },
-                                valueRange = 14f..28f,
-                                steps = 6,
-                                modifier = Modifier.weight(1f)
-                            )
+                                valueRange = 14f..28f, steps = 6,
+                                modifier = Modifier.weight(1f))
                             Text("A", fontSize = 22.sp, color = poemTextColor)
                         }
-                        Text("Font size: ${poemFontSize}sp", fontSize = 11.sp, color = poemSubColor)
-                        // Night mode toggle
+                        Text("Font size: ${poemFontSize}sp", fontSize = 11.sp,
+                            color = poemSubColor)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(if (isPoemNightMode) "🌙" else "☀️", fontSize = 18.sp)
                             Spacer(Modifier.width(10.dp))
@@ -1894,166 +1899,181 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                     progress = { if (totalPoemPages <= 1) 1f
                                  else poemPager.currentPage.toFloat() / (totalPoemPages - 1) },
                     modifier = Modifier.fillMaxWidth().height(3.dp),
-                    color = MaterialTheme.colorScheme.primary,
+                    color    = MaterialTheme.colorScheme.primary,
                     trackColor = if (isPoemNightMode) Color(0xFF3A3A3A)
                                  else MaterialTheme.colorScheme.surfaceVariant
                 )
             }
 
-            // Horizontal pager for poem pages
-            // Use Box to consume remaining space between progress bar and footer
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            // ── Horizontal pager ─────────────────────────────────────────
             androidx.compose.foundation.pager.HorizontalPager(
-                state = poemPager,
-                modifier = Modifier.fillMaxSize()
+                state    = poemPager,
+                modifier = Modifier.weight(1f).fillMaxWidth()
             ) { pageIdx ->
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 20.dp)
-                ) {
+                LazyColumn(modifier = Modifier.fillMaxSize().background(poemBg),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 20.dp)) {
                     item {
-                        // Show header only on first page
+                        // Header chips on first page only
                         if (pageIdx == 0) {
-                            // Format + mood chips
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                                Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(6.dp)) {
-                                    Text(text = poem.format, fontSize = 11.sp, modifier = Modifier.padding(7.dp, 3.dp), color = MaterialTheme.colorScheme.onSecondaryContainer) }
-                                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(6.dp)) {
-                                    Text(text = poem.mood, fontSize = 11.sp, modifier = Modifier.padding(7.dp, 3.dp), color = MaterialTheme.colorScheme.onTertiaryContainer) }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(bottom = 8.dp)) {
+                                Surface(color = MaterialTheme.colorScheme.secondaryContainer,
+                                    shape = RoundedCornerShape(6.dp)) {
+                                    Text(poem.format, fontSize = 11.sp,
+                                        modifier = Modifier.padding(7.dp, 3.dp),
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer) }
+                                Surface(color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    shape = RoundedCornerShape(6.dp)) {
+                                    Text(poem.mood, fontSize = 11.sp,
+                                        modifier = Modifier.padding(7.dp, 3.dp),
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer) }
                             }
                         }
-
-                        // Page content — poem lines for this page
-                        Text(
-                            text = poemPages.getOrElse(pageIdx) { "" },
-                            fontSize = poemFontSize.sp,
-                            fontStyle = FontStyle.Italic,
+                        // Page content
+                        Text(text = poemPages.getOrElse(pageIdx) { "" },
+                            fontSize   = poemFontSize.sp,
+                            fontStyle  = FontStyle.Italic,
                             lineHeight = (poemFontSize * 1.9).sp,
-                            color = poemTextColor,
-                            modifier = Modifier.padding(vertical = 16.dp)
-                        )
+                            color      = poemTextColor,
+                            modifier   = Modifier.padding(vertical = 16.dp))
 
-                        // Show author + actions only on last page
+                        // Author + actions on last page only
                         if (pageIdx == totalPoemPages - 1) {
                             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-
-                // Author row
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(50), modifier = Modifier.size(40.dp)) {
-                        Box(contentAlignment = Alignment.Center) { Text(text = poem.authorName.firstOrNull()?.uppercase() ?: "K", fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onPrimaryContainer) } }
-                    Spacer(Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = poem.authorName, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                        Text(text = stringResource(R.string.poet_label), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    if (!isAuthor) {
-                        OutlinedButton(onClick = { followVm.toggle(user.userId, authorId) }, shape = RoundedCornerShape(20.dp), enabled = !followState.isLoading, modifier = Modifier.height(32.dp)) {
-                            Text(text = if (followState.isFollowing) "Following" else "Follow", fontSize = 11.sp) } }
-                }
-
-                Spacer(Modifier.height(20.dp))
-
-                // Actions row — Like + Tip
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Like button
-                    OutlinedButton(onClick = { vm.toggleLike(user.userId, poemId) },
-                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), enabled = true) {
-                        Icon(if (state.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null,
-                            tint = if (state.isLiked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(text = poem.likesCount.toString())
-                    }
-
-                    // Tip button — only show if not the author
-                    if (!isAuthor) {
-                        Button(onClick = { vm.openTipDialog() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), enabled = true,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)) {
-                            Text(text = stringResource(R.string.tip_poet))
-                            if (poem.tipsCount > 0) { Spacer(Modifier.width(4.dp)); Text(text = "·" + poem.tipsCount, fontSize = 11.sp) }
-                        }
-                    } else {
-                        // Author sees their tip earnings
-                        Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
-                            Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.Center) {
-                                Text(text = stringResource(R.string.tips_earned, poem.totalTipsCoins), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onTertiaryContainer) }
-                        }
-                    }
-                }
-
-                // Coin balance info card
-                if (!isAuthor) {
-                    Spacer(Modifier.height(8.dp))
-                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = stringResource(R.string.balance_coins, user.coinBalance), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
-                            if (user.coinBalance < MvpConfig.POEM_TIP_MIN) {
-                                TextButton(onClick = onBuyCoins) { Text(text = stringResource(R.string.buy_coins), fontSize = 11.sp) }
+                            // Author row
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Surface(color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(50)) {
+                                    Text(poem.authorName.take(1).uppercase(),
+                                        modifier = Modifier.padding(10.dp),
+                                        fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(poem.authorName, fontWeight = FontWeight.Medium,
+                                        fontSize = 14.sp, color = poemTextColor)
+                                    Text(stringResource(R.string.poet_label), fontSize = 12.sp,
+                                        color = poemSubColor)
+                                }
+                                if (!isAuthor) {
+                                    OutlinedButton(onClick = {
+                                        if (followState.isFollowing)
+                                            followVm.unfollow(user.userId, authorId)
+                                        else followVm.follow(user.userId, authorId, poem.authorName)
+                                    }, shape = RoundedCornerShape(20.dp)) {
+                                        Text(if (followState.isFollowing)
+                                            stringResource(R.string.following)
+                                            else stringResource(R.string.follow),
+                                            fontSize = 12.sp)
+                                    }
+                                }
                             }
-                        }
-                    }
-                }
-            } // end HorizontalPager
-
-                        } // end Box wrapper for pager
-
-            // ── Page navigation footer — same style as story reader ─────
-            if (totalPoemPages > 1) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(poemTopBar)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Previous arrow
-                    IconButton(
-                        onClick = { poemScope.launch { poemPager.animateScrollToPage(poemPager.currentPage - 1) } },
-                        enabled = poemPager.currentPage > 0
-                    ) {
-                        Icon(Icons.Default.ArrowBack, "Previous page",
-                            tint = if (poemPager.currentPage > 0) MaterialTheme.colorScheme.primary
-                                   else poemSubColor.copy(alpha = 0.3f))
-                    }
-                    // Page count — same font as story reader
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Page ${poemPager.currentPage + 1} of $totalPoemPages",
-                            fontSize = 13.sp,
-                            color = poemSubColor,
-                            fontWeight = FontWeight.Medium
-                        )
-                        // Dot indicators (up to 7)
-                        if (totalPoemPages <= 10) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier.padding(top = 4.dp)) {
-                                val offset = if (totalPoemPages <= 7) 0
-                                    else maxOf(0, minOf(poemPager.currentPage - 3, totalPoemPages - 7))
-                                val showDots = minOf(totalPoemPages, 7)
-                                repeat(showDots) { i ->
-                                    val actualPage = i + offset
-                                    Box(modifier = Modifier
-                                        .size(if (actualPage == poemPager.currentPage) 7.dp else 4.dp)
-                                        .background(
-                                            if (actualPage == poemPager.currentPage) MaterialTheme.colorScheme.primary
-                                            else poemSubColor.copy(alpha = 0.4f),
-                                            CircleShape))
+                            // Like + Tip actions row
+                            Row(modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { vm.toggleLike(user.userId, poemId) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)) {
+                                    Icon(if (state.isLiked) Icons.Default.Favorite
+                                         else Icons.Default.FavoriteBorder,
+                                        null, modifier = Modifier.size(16.dp),
+                                        tint = if (state.isLiked) MaterialTheme.colorScheme.error
+                                               else MaterialTheme.colorScheme.onSurface)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("${poem.likesCount} ${stringResource(R.string.likes)}",
+                                        fontSize = 12.sp)
+                                }
+                                if (!isAuthor) {
+                                    Button(onClick = { vm.openTipDialog() },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp)) {
+                                        Text(stringResource(R.string.tip_poet_btn),
+                                            fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                            // Tips earned
+                            if (poem.totalTipsCoins > 0) {
+                                Surface(color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                    Text(text = stringResource(R.string.tips_earned, poem.totalTipsCoins),
+                                        fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        modifier = Modifier.padding(12.dp, 8.dp))
+                                }
+                            }
+                            // Coin balance card
+                            if (!isAuthor && user.coinBalance < 5) {
+                                Card(colors = CardDefaults.cardColors(
+                                    MaterialTheme.colorScheme.surfaceVariant),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                    Row(modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically) {
+                                        Text(stringResource(R.string.low_balance_tip),
+                                            fontSize = 12.sp, modifier = Modifier.weight(1f),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        TextButton(onClick = onBuyCoins) {
+                                            Text(stringResource(R.string.buy_coins),
+                                                fontSize = 11.sp)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                    // Next arrow
+                }
+            }
+
+            // ── Page navigation footer ───────────────────────────────────
+            if (totalPoemPages > 1) {
+                Row(modifier = Modifier.fillMaxWidth().background(poemTopBar)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
-                        onClick = { poemScope.launch { poemPager.animateScrollToPage(poemPager.currentPage + 1) } },
-                        enabled = poemPager.currentPage < totalPoemPages - 1
-                    ) {
-                        Icon(Icons.Default.ArrowForward, "Next page",
-                            tint = if (poemPager.currentPage < totalPoemPages - 1) MaterialTheme.colorScheme.primary
+                        onClick = { poemScope.launch {
+                            poemPager.animateScrollToPage(poemPager.currentPage - 1) } },
+                        enabled = poemPager.currentPage > 0) {
+                        Icon(Icons.Default.ArrowBack, "Previous",
+                            tint = if (poemPager.currentPage > 0)
+                                       MaterialTheme.colorScheme.primary
+                                   else poemSubColor.copy(alpha = 0.3f))
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Page ${poemPager.currentPage + 1} of $totalPoemPages",
+                            fontSize = 13.sp, color = poemSubColor,
+                            fontWeight = FontWeight.Medium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(top = 4.dp)) {
+                            val show = minOf(totalPoemPages, 7)
+                            val off  = if (totalPoemPages <= 7) 0
+                                else maxOf(0, minOf(poemPager.currentPage - 3, totalPoemPages - 7))
+                            repeat(show) { i ->
+                                val pg = i + off
+                                Box(modifier = Modifier
+                                    .size(if (pg == poemPager.currentPage) 7.dp else 4.dp)
+                                    .background(
+                                        if (pg == poemPager.currentPage)
+                                            MaterialTheme.colorScheme.primary
+                                        else poemSubColor.copy(alpha = 0.4f),
+                                        CircleShape))
+                            }
+                        }
+                    }
+                    IconButton(
+                        onClick = { poemScope.launch {
+                            poemPager.animateScrollToPage(poemPager.currentPage + 1) } },
+                        enabled = poemPager.currentPage < totalPoemPages - 1) {
+                        Icon(Icons.Default.ArrowForward, "Next",
+                            tint = if (poemPager.currentPage < totalPoemPages - 1)
+                                       MaterialTheme.colorScheme.primary
                                    else poemSubColor.copy(alpha = 0.3f))
                     }
                 }
             }
-        } // end outer Column
+        }
     }
 
     // Tip dialog
@@ -2062,43 +2082,33 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
         if (poem != null) {
             AlertDialog(
                 onDismissRequest = { vm.closeTipDialog() },
-                title = { Text(text = stringResource(R.string.tip_poet) + " " + poem.authorName) },
+                title = { Text(stringResource(R.string.tip_poet) + " " + poem.authorName) },
                 text = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = stringResource(R.string.tip_message), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(16.dp))
-                        Text(text = state.selectedTip.toString() + " coin" + (if (state.selectedTip > 1) "s" else ""), fontSize = 28.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.tertiary)
-                        Slider(value = state.selectedTip.toFloat(), onValueChange = { vm.onTipChange(it.toInt()) },
-                            valueRange = MvpConfig.POEM_TIP_MIN.toFloat()..MvpConfig.POEM_TIP_MAX.toFloat(), steps = MvpConfig.POEM_TIP_MAX - MvpConfig.POEM_TIP_MIN - 1,
-                            modifier = Modifier.padding(horizontal = 8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = MvpConfig.POEM_TIP_MIN.toString() + " min", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(text = MvpConfig.POEM_TIP_MAX.toString() + " max", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Text(text = stringResource(R.string.balance_coins, user.coinBalance), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (user.coinBalance < state.selectedTip) {
-                            Text(text = stringResource(R.string.not_enough_coins), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.tip_desc), fontSize = 13.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(1, 2, 3, 5).forEach { amt ->
+                                OutlinedButton(onClick = { vm.sendTip(user.userId, poemId, amt) },
+                                    enabled = !state.isTipping && user.coinBalance >= amt,
+                                    shape = RoundedCornerShape(8.dp)) {
+                                    Text("$amt 🪙", fontSize = 12.sp)
+                                }
+                            }
                         }
                     }
                 },
-                confirmButton = {
-                    Button(onClick = { vm.sendTip(user.userId, poem.authorId) },
-                        enabled = user.coinBalance >= state.selectedTip,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)) {
-                        Text(text = stringResource(R.string.send_tip, state.selectedTip) + if (state.selectedTip > 1) "s" else "")
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { vm.closeTipDialog() }) {
+                        Text(stringResource(R.string.cancel))
                     }
-                },
-                dismissButton = { TextButton(onClick = { vm.closeTipDialog() }) { Text(text = stringResource(R.string.cancel)) } }
+                }
             )
         }
     }
 }
 
 
-}
-}
-}
 // ── Library ───────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
