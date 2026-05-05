@@ -1959,8 +1959,8 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                                 if (!isAuthor) {
                                     OutlinedButton(onClick = {
                                         if (followState.isFollowing)
-                                            followVm.unfollow(user.userId, authorId)
-                                        else followVm.follow(user.userId, authorId, poem.authorName)
+                                            followVm.toggle(user.userId, authorId)
+                                        else followVm.toggle(user.userId, authorId)
                                     }, shape = RoundedCornerShape(20.dp)) {
                                         Text(if (followState.isFollowing)
                                             stringResource(R.string.following)
@@ -1981,14 +1981,14 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                                         tint = if (state.isLiked) MaterialTheme.colorScheme.error
                                                else MaterialTheme.colorScheme.onSurface)
                                     Spacer(Modifier.width(6.dp))
-                                    Text("${poem.likesCount} ${stringResource(R.string.likes)}",
+                                    Text("${poem.likesCount} ❤️",
                                         fontSize = 12.sp)
                                 }
                                 if (!isAuthor) {
                                     Button(onClick = { vm.openTipDialog() },
                                         modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(10.dp)) {
-                                        Text(stringResource(R.string.tip_poet_btn),
+                                        Text("🪙 Tip Poet",
                                             fontSize = 12.sp)
                                     }
                                 }
@@ -2011,7 +2011,7 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                                     Row(modifier = Modifier.padding(12.dp),
                                         verticalAlignment = Alignment.CenterVertically) {
-                                        Text(stringResource(R.string.low_balance_tip),
+                                        Text("Low coin balance. Buy more coins to tip poets.",
                                             fontSize = 12.sp, modifier = Modifier.weight(1f),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         TextButton(onClick = onBuyCoins) {
@@ -2085,11 +2085,11 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                 title = { Text(stringResource(R.string.tip_poet) + " " + poem.authorName) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stringResource(R.string.tip_desc), fontSize = 13.sp)
+                        Text("Send coins to appreciate this poem:", fontSize = 13.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(1, 2, 3, 5).forEach { amt ->
-                                OutlinedButton(onClick = { vm.sendTip(user.userId, poemId, amt) },
-                                    enabled = !state.isTipping && user.coinBalance >= amt,
+                                OutlinedButton(onClick = { vm.sendTip(user.userId, poem.authorId) },
+                                    enabled = user.coinBalance >= amt,
                                     shape = RoundedCornerShape(8.dp)) {
                                     Text("$amt 🪙", fontSize = 12.sp)
                                 }
