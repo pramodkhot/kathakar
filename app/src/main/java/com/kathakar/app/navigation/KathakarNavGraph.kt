@@ -258,7 +258,11 @@ fun KathakarNavGraph(navController: NavHostController) {
             EditProfileScreen(
                 user    = user,
                 onBack  = { navController.popBackStack() },
-                onSaved = { _, _ -> navController.popBackStack() }
+                onSaved = { _, _ ->
+                    authVM.refreshUser(user.userId)
+                    navController.popBackStack()
+                },
+                authVm  = authVM   // ← same instance as NavGraph — updates propagate
             )
         }
 
