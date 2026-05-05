@@ -99,9 +99,17 @@ class AuthRepository @Inject constructor(
             createFreshUser(uid, name, email, photoUrl)
         } else {
             val updates = HashMap<String, Any>()
-            updates["name"]     = name
-            updates["email"]    = email
-            updates["photoUrl"] = photoUrl
+            updates["name"]  = name
+            updates["email"] = email
+            // CRITICAL: Only update photoUrl from auth provider if:
+            // 1. The user has NO custom uploaded photo (empty in Firestore), AND
+            // 2. The auth provider gave us a real photo (Google avatar)
+            // Never overwrite a user's uploaded profile photo with "" on email sign-in
+            val existingPhoto = snap.getString("photoUrl") ?: ""
+            if (existingPhoto.isEmpty() && photoUrl.isNotEmpty()) {
+                updates["photoUrl"] = photoUrl
+            }
+            // If existingPhoto is not empty, user has a custom uploaded photo — keep it
             ref.update(updates).await()
         }
     }
