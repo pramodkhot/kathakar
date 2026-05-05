@@ -43,6 +43,12 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
     }
     fun signOut() { repo.signOut(); _s.value = AuthUiState() }
 
+    // Call after profile save to update the user object shown in UI
+    fun refreshUser(userId: String) = viewModelScope.launch {
+        val updated = repo.fetchUserPublic(userId)
+        if (updated != null) _s.update { it.copy(user = updated) }
+    }
+
     fun savePreferredLanguages(userId: String, langs: List<String>, onDone: () -> Unit) {
         viewModelScope.launch { repo.savePreferredLanguages(userId, langs); onDone() }
     }
