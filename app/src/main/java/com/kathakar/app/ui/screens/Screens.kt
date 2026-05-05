@@ -2092,10 +2092,9 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
     }
 }
 
-}
-}
-}
 
+}
+}
 // ── Library ───────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
