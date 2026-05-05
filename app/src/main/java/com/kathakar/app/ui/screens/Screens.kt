@@ -915,9 +915,7 @@ fun WriteScreen(user: User, onCreateStory: () -> Unit, onCreateEpisode: (String,
                 item {
                     Button(onClick = onCreateStory, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)) {
-                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(text = stringResource(R.string.new_story_btn))
+                        Text(text = stringResource(R.string.new_story_btn), fontWeight = FontWeight.Medium)
                     }
                 }
                 if (state.isLoading) {
@@ -962,7 +960,7 @@ fun WriteScreen(user: User, onCreateStory: () -> Unit, onCreateEpisode: (String,
                                     modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
                                     Icon(Icons.Default.Add, null, modifier = Modifier.size(15.dp))
                                     Spacer(Modifier.width(3.dp))
-                                    Text(text = "+ Ch. ${story.totalEpisodes + 1}", fontSize = 12.sp)
+                                    Text(text = "Ch. ${story.totalEpisodes + 1}", fontSize = 12.sp)
                                 }
                             }
                         }
@@ -1800,6 +1798,7 @@ fun WritePoemSheet(user: User, vm: PoemsViewModel) {
 @Composable
 fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                      onBack: () -> Unit, onBuyCoins: () -> Unit,
+                     onAuthorClick: (String) -> Unit = {},
                      vm: PoemDetailViewModel = hiltViewModel(),
                      followVm: FollowViewModel = hiltViewModel()) {
     val state       by vm.state.collectAsState()
@@ -1940,8 +1939,9 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                         // Author + actions on last page only
                         if (pageIdx == totalPoemPages - 1) {
                             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-                            // Author row
-                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            // Author row — tappable to open author profile
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                                .clickable { if (!isAuthor) onAuthorClick(authorId) },
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Surface(color = MaterialTheme.colorScheme.primaryContainer,
                                     shape = RoundedCornerShape(50)) {
@@ -1952,7 +1952,8 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                                 Spacer(Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(poem.authorName, fontWeight = FontWeight.Medium,
-                                        fontSize = 14.sp, color = poemTextColor)
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.primary) // orange = clickable hint
                                     Text(stringResource(R.string.poet_label), fontSize = 12.sp,
                                         color = poemSubColor)
                                 }
