@@ -2471,9 +2471,9 @@ fun CoinDetailsScreen(
     // Calculate stats from transaction history
     val totalSpent   = state.coinHistory.filter { it.coinsAmount < 0 }.sumOf { -it.coinsAmount }
     val totalEarned  = state.coinHistory.filter { it.coinsAmount > 0 }.sumOf { it.coinsAmount }
-    val tipsSent     = state.coinHistory.filter { it.type == "POEM_TIP_GIVEN" }.sumOf { -it.coinsAmount }
-    val tipsReceived = state.coinHistory.filter { it.type == "POEM_TIP_RECEIVED" }.sumOf { it.coinsAmount }
-    val coinsFromUnlocks = state.coinHistory.filter { it.type.contains("UNLOCK") }.sumOf { -it.coinsAmount }
+    val tipsSent     = state.coinHistory.filter { it.type == CoinTxnType.POEM_TIP }.sumOf { -it.coinsAmount }
+    val tipsReceived = state.coinHistory.filter { it.type == CoinTxnType.POEM_TIP_RECEIVED }.sumOf { it.coinsAmount }
+    val coinsFromUnlocks = state.coinHistory.filter { it.type == CoinTxnType.EPISODE_UNLOCK }.sumOf { -it.coinsAmount }
 
     Scaffold(topBar = { TopAppBar(
         title = { Text("Coin Details") },
@@ -2584,20 +2584,21 @@ private fun CoinTransactionRow(txn: CoinTransaction) {
     val isPositive = txn.coinsAmount > 0
     val amountColor = if (isPositive) Color(0xFF22C55E) else MaterialTheme.colorScheme.error
     val amountText  = if (isPositive) "+${txn.coinsAmount}" else "${txn.coinsAmount}"
-    val icon = when {
-        txn.type.contains("TIP_RECEIVED") -> "🎁"
-        txn.type.contains("TIP_GIVEN")    -> "💝"
-        txn.type.contains("UNLOCK")       -> "🔓"
-        txn.type.contains("PURCHASE")     -> "🛒"
-        txn.type.contains("SIGNUP")       -> "🎉"
-        txn.type.contains("EARNED")       -> "✍️"
-        else                              -> "🪙"
+    val icon = when (txn.type) {
+        CoinTxnType.POEM_TIP_RECEIVED -> "🎁"
+        CoinTxnType.POEM_TIP          -> "💝"
+        CoinTxnType.EPISODE_UNLOCK    -> "🔓"
+        CoinTxnType.COIN_PURCHASE     -> "🛒"
+        CoinTxnType.SIGNUP_BONUS      -> "🎉"
+        CoinTxnType.AUTHOR_EARNING    -> "✍️"
+        CoinTxnType.WITHDRAWAL        -> "💰"
+        CoinTxnType.REWARDED_AD       -> "📺"
     }
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Text(icon, fontSize = 22.sp, modifier = Modifier.width(36.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(txn.note.ifEmpty { txn.type.replace("_", " ").lowercase()
+            Text(txn.note.ifEmpty { txn.type.name.replace("_", " ").lowercase()
                 .replaceFirstChar { it.uppercase() } },
                 fontSize = 14.sp, fontWeight = FontWeight.Medium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
