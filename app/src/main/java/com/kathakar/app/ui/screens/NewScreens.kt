@@ -411,46 +411,67 @@ fun ReadingSettingsBar(
     fontFamily: String,
     onFontSize: (Int) -> Unit,
     onNightMode: (Boolean) -> Unit,
-    onFontFamily: (String) -> Unit
+    onFontFamily: (String) -> Unit,
+    onClose: () -> Unit = {}       // ← close button callback
 ) {
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
+    val barBg = if (isNightMode) androidx.compose.ui.graphics.Color(0xFF2A2A2A)
+                else MaterialTheme.colorScheme.surfaceVariant
+    val textColor = if (isNightMode) androidx.compose.ui.graphics.Color(0xFFE0D5C5)
+                    else MaterialTheme.colorScheme.onSurface
+
+    Surface(color = barBg, tonalElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Reading Settings", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
 
-            // Font size
+            // Header row — title + close button
+            Row(modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Reading Settings", fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp, color = textColor, modifier = Modifier.weight(1f))
+                // ── Close button — clear and obvious ─────────────────────
+                IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Close settings",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp))
+                }
+            }
+
+            // Font size slider
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("A", fontSize = 14.sp, modifier = Modifier.width(24.dp))
-                Slider(value = KathakarMeta.FONT_SIZES.indexOf(fontSize).toFloat(),
+                Text("A", fontSize = 14.sp, color = textColor,
+                    modifier = Modifier.width(24.dp))
+                Slider(
+                    value = KathakarMeta.FONT_SIZES.indexOf(fontSize).toFloat(),
                     onValueChange = { idx ->
-                        onFontSize(KathakarMeta.FONT_SIZES[idx.toInt().coerceIn(0, KathakarMeta.FONT_SIZES.lastIndex)])
+                        onFontSize(KathakarMeta.FONT_SIZES[idx.toInt()
+                            .coerceIn(0, KathakarMeta.FONT_SIZES.lastIndex)])
                     },
                     valueRange = 0f..(KathakarMeta.FONT_SIZES.size - 1).toFloat(),
                     steps = KathakarMeta.FONT_SIZES.size - 2,
-                    modifier = Modifier.weight(1f))
-                Text("A", fontSize = 22.sp)
+                    modifier = Modifier.weight(1f),
+                    colors = SliderDefaults.colors(
+                        thumbColor  = MaterialTheme.colorScheme.primary,
+                        activeTrackColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+                Text("A", fontSize = 22.sp, color = textColor)
             }
             Text("Font size: ${fontSize}sp", fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                color = textColor.copy(alpha = 0.6f))
 
-            // Night mode
+            // Night / Day mode toggle
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Use emoji since NightlightRound/WbSunny not in material-icons-core
-                Text(text = if (isNightMode) "🌙" else "☀️", fontSize = 18.sp)
+                Text(if (isNightMode) "🌙" else "☀️", fontSize = 18.sp)
                 Spacer(Modifier.width(10.dp))
                 Text(if (isNightMode) "Night mode" else "Day mode",
-                    modifier = Modifier.weight(1f), fontSize = 14.sp)
-                Switch(checked = isNightMode, onCheckedChange = onNightMode)
+                    modifier = Modifier.weight(1f), fontSize = 14.sp, color = textColor)
+                Switch(checked = isNightMode, onCheckedChange = onNightMode,
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor  = MaterialTheme.colorScheme.primary,
+                        checkedTrackColor  = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                    ))
             }
-
-            // Font family
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                KathakarMeta.FONT_FAMILIES.forEach { f ->
-                    FilterChip(selected = fontFamily == f, onClick = { onFontFamily(f) },
-                        label = { Text(f, fontSize = 12.sp) })
-                }
-            }
+            // Font family buttons REMOVED — not functional
         }
     }
 }
