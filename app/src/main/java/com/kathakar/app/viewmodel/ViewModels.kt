@@ -420,10 +420,16 @@ class ReaderViewModel @Inject constructor(
             lastPageNumber    = _s.value.currentPage))
     }
 
-    fun loadSavedPage(userId: String, storyId: String) = viewModelScope.launch {
+    fun loadSavedPage(userId: String, storyId: String, episodeId: String = "") = viewModelScope.launch {
         val result = storyRepo.getReadingProgress(userId)
         if (result is Resource.Success) {
-            val progress = result.data.find { it.storyId == storyId }
+            // Match by BOTH storyId AND episodeId — chapter-specific progress
+            val progress = if (episodeId.isNotEmpty()) {
+                result.data.find { it.storyId == storyId && it.lastEpisodeId == episodeId }
+            } else {
+                // Fallback: find most recent progress for this story (legacy)
+                result.data.find { it.storyId == storyId }
+            }
             progress?.let { restoreSavedPage(it.lastPageNumber) }
         }
     }
