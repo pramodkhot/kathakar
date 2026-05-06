@@ -725,8 +725,7 @@ fun EpisodeReaderScreen(
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.Default.ArrowBack, null,
-                                tint = if (state.isNightMode) Color(0xFFE0D5C5)
-                                       else MaterialTheme.colorScheme.onSurface)
+                                tint = MaterialTheme.colorScheme.primary)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = topBarColor),
@@ -736,8 +735,7 @@ fun EpisodeReaderScreen(
                                 Icon(if (state.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                     null,
                                     tint = if (state.isLiked) MaterialTheme.colorScheme.error
-                                           else if (state.isNightMode) Color(0xFFE0D5C5)
-                                           else MaterialTheme.colorScheme.onSurface,
+                                           else MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp))
                             }
                         }
@@ -746,9 +744,7 @@ fun EpisodeReaderScreen(
                         }
                         IconButton(onClick = { vm.toggleSettingsBar() }) {
                             Icon(Icons.Default.Settings, null, modifier = Modifier.size(20.dp),
-                                tint = if (state.showSettingsBar) MaterialTheme.colorScheme.primary
-                                       else if (state.isNightMode) Color(0xFFE0D5C5)
-                                       else MaterialTheme.colorScheme.onSurface)
+                                tint = MaterialTheme.colorScheme.primary)
                         }
                         if (isAuthor) {
                             IconButton(onClick = onEdit) {
@@ -790,7 +786,8 @@ fun EpisodeReaderScreen(
                     fontFamily   = state.fontFamily,
                     onFontSize   = { vm.setFontSize(it) },
                     onNightMode  = { vm.setNightMode(it) },
-                    onFontFamily = { vm.setFontFamily(it) }
+                    onFontFamily = { vm.setFontFamily(it) },
+                    onClose      = { vm.toggleSettingsBar() }  // ← closes the drawer
                 )
             }
 
@@ -1885,8 +1882,7 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                 actions = {
                     IconButton(onClick = { showPoemSettings = !showPoemSettings }) {
                         Icon(Icons.Default.Settings, null,
-                            tint = if (showPoemSettings) MaterialTheme.colorScheme.primary
-                                   else poemTextColor,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp))
                     }
                 }
@@ -1918,6 +1914,19 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                                else MaterialTheme.colorScheme.surfaceVariant) {
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Header with close button
+                        Row(modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text("Reading Settings", fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp, color = poemTextColor,
+                                modifier = Modifier.weight(1f))
+                            IconButton(onClick = { showPoemSettings = false },
+                                modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Close, "Close settings",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp))
+                            }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("A", fontSize = 14.sp, color = poemTextColor,
                                 modifier = Modifier.width(24.dp))
