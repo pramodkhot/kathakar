@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "843855541873-1oe8vhp6m77dlqns4p01o38g76kaph52.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kathakar.app",
+            "certificate_hash": "3a5a189ee7899c88294d6c3c3dc986ecc2327954"
+          }
+        },
+        {
           "client_id": "843855541873-l8tmuac0lbkutvjbpjgkhce062cvnur5.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
