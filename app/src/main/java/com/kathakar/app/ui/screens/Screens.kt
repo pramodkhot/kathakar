@@ -114,11 +114,7 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
             Card(colors = CardDefaults.cardColors(MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
                 Text(text = state.error ?: "", modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp) }
         }
-        AnimatedVisibility(isRegister) {
-            Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                Text(text = stringResource(R.string.free_coins_signup, MvpConfig.FREE_COINS_ON_SIGNUP),
-                    modifier = Modifier.padding(12.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSecondaryContainer) }
-        }
+        // Free coins signup text hidden — coin system disabled
         Spacer(Modifier.height(18.dp))
         Button(onClick = { viewModel.clearError()
             if (isRegister) viewModel.register(name, email, password) else viewModel.signInWithEmail(email, password) },
@@ -128,6 +124,19 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
         }
         TextButton(onClick = { isRegister = !isRegister; viewModel.clearError() }) {
             Text(text = if (isRegister) stringResource(R.string.already_have_account) else stringResource(R.string.new_here)) }
+        // ── Google Sign-In button ──────────────────────────────────────────
+        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+        OutlinedButton(
+            onClick = { googleLauncher.launch(googleClient.signInIntent) },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            enabled = !state.isLoading
+        ) {
+            Text(text = "G", fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(end = 10.dp))
+            Text(text = "Continue with Google", fontWeight = FontWeight.Medium)
+        }
         Spacer(Modifier.height(40.dp))
     }
 }
