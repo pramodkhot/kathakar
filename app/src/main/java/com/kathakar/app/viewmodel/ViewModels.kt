@@ -249,7 +249,7 @@ class StoryViewModel @Inject constructor(
         _s.update { it.copy(isLoading = true) }
         val story    = (storyRepo.getStory(storyId) as? Resource.Success)?.data
         val episodes = (storyRepo.getEpisodes(storyId) as? Resource.Success)?.data ?: emptyList()
-        val unlocked = coinRepo.getUnlockedIds(userId, storyId)
+        val unlocked = emptyList<String>()  // Coin unlock disabled — all episodes free
         val entry    = libRepo.getEntry(userId, storyId)
         val rating   = storyRepo.getUserRating(userId, storyId)
         _s.update { it.copy(story = story, episodes = episodes, unlockedIds = unlocked,
