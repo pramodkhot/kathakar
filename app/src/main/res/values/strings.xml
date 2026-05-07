@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">KathaKar</string>
+    <!-- Web Client ID from google-services.json — required for Google Sign-In -->
+    <string name="default_web_client_id">843855541873-ub6t3asqtsuok8cpofmula1ib3940c1d.apps.googleusercontent.com</string>
     <string name="app_tagline">Stories &amp; Poems in every language</string>
     <string name="nav_read">Read</string>
     <string name="nav_write">Write</string>
@@ -112,7 +114,6 @@
     <string name="language_settings_sub">Change the language of the entire app</string>
     <string name="content_language_title">Content Languages</string>
     <string name="content_language_sub">Stories and poems in these languages will appear first in your feed</string>
-    <!-- New feature strings -->
     <string name="writer_dashboard">Writer Dashboard</string>
     <string name="total_reads">Total Reads</string>
     <string name="author_profile">Author Profile</string>
@@ -140,13 +141,12 @@
     <string name="error_title_content">Title and content required</string>
     <string name="your_balance">Your balance: %1$d coins</string>
     <string name="tips_earned">Tips: %1$d coins</string>
-
-    <!-- Missing keys added -->
     <string name="new_story_title">New Story</string>
     <string name="send_tip">Send %1$d coin</string>
     <string name="send_tip_plural">Send %1$d coins</string>
-
     <string name="new_story_btn">+ New Story</string>
     <string name="save_chapter_btn">Save Chapter</string>
     <string name="import_file_btn">Import file (.docx/.txt)</string>
+    <string name="likes">Likes</string>
+    <string name="unlock_cost">This episode costs %1$d coins</string>
 </resources>
