@@ -619,7 +619,7 @@ fun StoryDetailScreen(storyId: String, user: User, onBack: () -> Unit,
             item { Text(text = stringResource(R.string.episodes_heading), fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
             items(state.episodes, key = { it.episodeId }) { ep ->
                 val isAuthor   = user.userId == (state.story?.authorId ?: "")
-                val isUnlocked = isAuthor || ep.isFree || ep.chapterNumber == 1 || state.unlockedIds.contains(ep.episodeId)
+                val isUnlocked = true  // All chapters free — Facebook Ads monetization, coins disabled
                 EpisodeRow(episode = ep, isUnlocked = isUnlocked, isUnlocking = false, isAuthor = isAuthor, userCoins = user.coinBalance,
                     onTap = { if (isUnlocked) onReadEpisode(ep.episodeId, state.story?.authorId ?: "") else vm.unlock(ep, user) })
             }
@@ -630,32 +630,28 @@ fun StoryDetailScreen(storyId: String, user: User, onBack: () -> Unit,
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EpisodeRow(episode: Episode, isUnlocked: Boolean, isUnlocking: Boolean, isAuthor: Boolean, userCoins: Int, onTap: () -> Unit) {
-    var showDialog by remember { mutableStateOf(false) }
-    Card(onClick = { if (isUnlocked) onTap() else showDialog = true }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(10.dp)) {
+    // Coin system disabled — Facebook Ads monetization active, all chapters free
+    Card(onClick = onTap, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(10.dp)) {
         Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(color = if (isUnlocked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp), modifier = Modifier.size(38.dp)) {
-                Box(contentAlignment = Alignment.Center) { Text(text = episode.chapterNumber.toString(), fontWeight = FontWeight.Bold, fontSize = 14.sp) } }
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp), modifier = Modifier.size(38.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(text = episode.chapterNumber.toString(), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = episode.title, fontWeight = FontWeight.Medium, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(text = episode.wordCount.toString() + " words", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            when {
-                isUnlocking -> CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                isAuthor    -> Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(6.dp)) { Text(text = stringResource(R.string.yours_label), fontSize = 10.sp, modifier = Modifier.padding(5.dp, 2.dp), color = MaterialTheme.colorScheme.onSecondaryContainer) }
-                isUnlocked  -> { Icon(Icons.Default.Lock, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    if (episode.isFree || episode.chapterNumber == 1) Text(text = stringResource(R.string.free_label), fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp)) }
-                else -> { Icon(Icons.Default.Lock, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                    Text(text = episode.unlockCostCoins.toString() + " coins", fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp)) }
+                Text(text = episode.wordCount.toString() + " words", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // Only show "yours" badge for author — no lock/coin UI
+            if (isAuthor) {
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(6.dp)) {
+                    Text(text = stringResource(R.string.yours_label), fontSize = 10.sp,
+                        modifier = Modifier.padding(5.dp, 2.dp),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
             }
         }
-    }
-    if (showDialog) {
-        AlertDialog(onDismissRequest = { showDialog = false }, title = { Text(text = stringResource(R.string.unlock_episode)) },
-            text = { Column { Text(text = episode.title + " costs " + episode.unlockCostCoins + " coins.")
-                Text(text = stringResource(R.string.your_balance, userCoins), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-                if (userCoins < episode.unlockCostCoins) Text(text = stringResource(R.string.not_enough_coins), color = MaterialTheme.colorScheme.error, fontSize = 13.sp) } },
-            confirmButton = { Button(onClick = { showDialog = false; if (userCoins >= episode.unlockCostCoins) onTap() }, enabled = userCoins >= episode.unlockCostCoins) { Text(text = stringResource(R.string.unlock)) } },
-            dismissButton = { TextButton(onClick = { showDialog = false }) { Text(text = stringResource(R.string.cancel)) } })
     }
 }
 
@@ -2132,42 +2128,11 @@ fun PoemDetailScreen(poemId: String, authorId: String, user: User,
                                         fontSize = 12.sp)
                                 }
                                 if (!isAuthor) {
-                                    Button(onClick = { vm.openTipDialog() },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp)) {
-                                        Text("🪙 Tip Poet",
-                                            fontSize = 12.sp)
-                                    }
+                                    // Tip button hidden — coin system disabled
                                 }
                             }
-                            // Tips earned
-                            if (poem.totalTipsCoins > 0) {
-                                Surface(color = MaterialTheme.colorScheme.tertiaryContainer,
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                                    Text(text = stringResource(R.string.tips_earned, poem.totalTipsCoins),
-                                        fontSize = 13.sp, fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                        modifier = Modifier.padding(12.dp, 8.dp))
-                                }
-                            }
-                            // Coin balance card
-                            if (!isAuthor && user.coinBalance < 5) {
-                                Card(colors = CardDefaults.cardColors(
-                                    MaterialTheme.colorScheme.surfaceVariant),
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                                    Row(modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Low coin balance. Buy more coins to tip poets.",
-                                            fontSize = 12.sp, modifier = Modifier.weight(1f),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        TextButton(onClick = onBuyCoins) {
-                                            Text(stringResource(R.string.buy_coins),
-                                                fontSize = 11.sp)
-                                        }
-                                    }
-                                }
-                            }
+                            // Tips earned section hidden — coin system disabled
+                            // Low balance card hidden — coin system disabled
                         }
                     }
                 }
@@ -2408,53 +2373,14 @@ fun ProfileScreen(user: User, onSignOut: () -> Unit, onBuyCoins: () -> Unit, onS
                     StatBox(stringResource(R.string.stories_label), user.storiesCount.toString(), Modifier.weight(1f))
                     StatBox(stringResource(R.string.poems_label),   user.poemsCount.toString(),  Modifier.weight(1f))
                     StatBox(stringResource(R.string.followers_label), user.followersCount.toString(), Modifier.weight(1f))
-                    StatBox(stringResource(R.string.coins_balance_label), user.coinBalance.toString(), Modifier.weight(1f))
+                    // Coin balance hidden — Facebook Ads monetization active
                 }
             }
             if (user.isAdmin) { item { Button(onClick = onAdminDashboard, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)) {
                 Text(text = stringResource(R.string.admin_dashboard), fontWeight = FontWeight.Medium) } } }
-            // ── NEW Coin card — full tappable card linking to CoinDetailsScreen ──
-            item {
-                Card(modifier = Modifier.fillMaxWidth().clickable { onCoinDetails() },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(MaterialTheme.colorScheme.primaryContainer)) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Column {
-                                Text("🪙 Coin Balance", fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
-                                Text("${user.coinBalance}", fontSize = 36.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary)
-                                if (user.totalCoinsEarned > 0) {
-                                    Text("Total earned: ${user.totalCoinsEarned}",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f))
-                                }
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("View all details →", fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium)
-                            }
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = onBuyCoins, modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)) {
-                                Text(stringResource(R.string.buy_coins))
-                            }
-                            OutlinedButton(onClick = onSubscribe, modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)) {
-                                Text(stringResource(R.string.subscribe))
-                            }
-                        }
-                    }
-                }
-            }
+            // Coin section hidden — Facebook Ads monetization active
+            // item { CoinCard() }  ← re-enable when coin system is activated
 
         }
     }
