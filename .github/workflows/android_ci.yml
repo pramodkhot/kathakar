@@ -22,14 +22,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # google-services.json is committed directly to repo — no secret needed
       - name: Verify google-services.json
         run: |
-          if python3 -c "import json; json.load(open('app/google-services.json'))" 2>/dev/null; then
-            echo "✅ google-services.json is valid JSON"
-            echo "Size: $(wc -c < app/google-services.json) bytes"
-            grep -o '"certificate_hash":"[^"]*"' app/google-services.json && echo "✅ certificate_hash found!" || echo "❌ No certificate_hash found"
+          echo "=== google-services.json content ==="
+          cat app/google-services.json
+          echo ""
+          echo "Size: $(wc -c < app/google-services.json) bytes"
+          if grep -q "certificate_hash" app/google-services.json; then
+            echo "✅ certificate_hash found - Google Sign-In will work!"
           else
-            echo "❌ google-services.json is INVALID or missing"
+            echo "❌ certificate_hash NOT found!"
             exit 1
           fi
 
