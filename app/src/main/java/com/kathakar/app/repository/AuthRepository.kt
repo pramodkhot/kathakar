@@ -42,7 +42,7 @@ class AuthRepository @Inject constructor(
                                     name = fbUser.displayName ?: "User",
                                     email = fbUser.email ?: "",
                                     photoUrl = fbUser.photoUrl?.toString() ?: "",
-                                    coinBalance = MvpConfig.FREE_COINS_ON_SIGNUP))
+                                    coinBalance = 0))  // Coins disabled — using Facebook Ads monetization
                             }
                         }
                     }
@@ -118,15 +118,15 @@ class AuthRepository @Inject constructor(
                                         preferredLanguages: List<String> = emptyList()) {
         val userRef = db.collection(FirestoreCollections.USERS).document(uid)
         val txnRef  = db.collection(FirestoreCollections.COIN_TRANSACTIONS).document()
-        val note    = "Welcome! " + MvpConfig.FREE_COINS_ON_SIGNUP + " free coins"
+        val note    = "Welcome to KathaKar!"  // No signup bonus — Facebook Ads monetization
         db.batch().apply {
             set(userRef, User(userId = uid, name = name, email = email, photoUrl = photoUrl,
-                bio = "", role = UserRole.WRITER, coinBalance = MvpConfig.FREE_COINS_ON_SIGNUP,
+                bio = "", role = UserRole.WRITER, coinBalance = 0,  // No signup coins
                 totalCoinsEarned = 0, followersCount = 0, followingCount = 0,
                 storiesCount = 0, isBanned = false, createdAt = Timestamp.now(),
                 preferredLanguages = preferredLanguages))
             set(txnRef, CoinTransaction(txnId = txnRef.id, userId = uid,
-                type = CoinTxnType.SIGNUP_BONUS, coinsAmount = MvpConfig.FREE_COINS_ON_SIGNUP,
+                type = CoinTxnType.SIGNUP_BONUS, coinsAmount = 0,  // No signup bonus
                 note = note, createdAt = Timestamp.now()))
         }.commit().await()
     }
