@@ -98,20 +98,39 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
     fun signInWithGoogle() {
         scope.launch {
             try {
+                val webClientId = ctx.getString(R.string.default_web_client_id)
+                // Try with all accounts (not just previously authorized)
                 val googleIdOption = GetGoogleIdOption.Builder()
                     .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId(ctx.getString(R.string.default_web_client_id))
+                    .setServerClientId(webClientId)
                     .setAutoSelectEnabled(false)
                     .build()
                 val request = GetCredentialRequest.Builder()
                     .addCredentialOption(googleIdOption)
                     .build()
-                val result = credentialManager.getCredential(ctx as android.app.Activity, request)
-                val credential = result.credential
-                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                // Use activity context for proper UI display
+                val activity = ctx as? android.app.Activity
+                val result = if (activity != null) {
+                    credentialManager.getCredential(activity, request)
+                } else {
+                    credentialManager.getCredential(ctx, request)
+                }
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(result.credential.data)
                 viewModel.signInWithGoogleToken(googleIdTokenCredential.idToken)
+            } catch (e: androidx.credentials.exceptions.NoCredentialException) {
+                // No Google accounts on device — fall back to legacy sign-in
+                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestIdToken(ctx.getString(R.string.default_web_client_id))
+                    .requestEmail()
+                    .build()
+                val client = GoogleSignIn.getClient(ctx, gso)
+                client.signOut()
+                // Launch legacy sign-in intent via activity
+                (ctx as? android.app.Activity)?.startActivityForResult(
+                    client.signInIntent, 9001)
+                viewModel.showError("Please sign in with your Google account")
             } catch (e: GetCredentialException) {
-                viewModel.showError("Google Sign-In failed: ${e.message}")
+                viewModel.showError("Google Sign-In failed: ${e.type} - ${e.message}")
             } catch (e: Exception) {
                 viewModel.showError("Error: ${e.message}")
             }
