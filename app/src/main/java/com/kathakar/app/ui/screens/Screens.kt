@@ -84,8 +84,13 @@ fun ComingSoonScreen(title: String, reason: String, onBack: () -> Unit) {
 fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val ctx = LocalContext.current
-    val gso = remember { GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-        .requestIdToken(ctx.getString(R.string.default_web_client_id)).requestEmail().build() }
+    val gso = remember {
+        val webClientId = ctx.getString(R.string.default_web_client_id)
+        android.util.Log.e("KATHAKAR_AUTH", "Web Client ID: $webClientId")
+        android.widget.Toast.makeText(ctx, "ID: ${webClientId.take(30)}...", android.widget.Toast.LENGTH_LONG).show()
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(webClientId).requestEmail().build()
+    }
     val googleClient   = remember { GoogleSignIn.getClient(ctx, gso) }
     val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         try {
