@@ -33,6 +33,7 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
     val isAuthenticated get() = _s.value.isAuthenticated
 
     fun signInWithGoogle(acc: GoogleSignInAccount) = doAuth { repo.signInWithGoogle(acc) }
+    fun signInWithGoogleToken(idToken: String) = doAuth { repo.signInWithGoogleToken(idToken) }
     fun signInWithEmail(e: String, p: String) {
         if (e.isBlank() || p.isBlank()) { _s.update { it.copy(error = "Email and password required") }; return }
         doAuth { repo.signInWithEmail(e, p) }
