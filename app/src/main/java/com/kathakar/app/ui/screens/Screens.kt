@@ -93,68 +93,58 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
                 .getResult(ApiException::class.java)
             viewModel.signInWithGoogle(account)
         } catch (e: ApiException) {
-            // Show exact error code to help diagnose
             viewModel.showError("Google Sign-In failed (code ${e.statusCode}). " +
                 when (e.statusCode) {
-                    10   -> "SHA-1 not registered in Firebase."
-                    12501-> "Sign-in cancelled."
-                    12500-> "Google Play Services error."
-                    7    -> "Network error."
-                    else -> "Error: ${e.message}"
+                    10    -> "SHA-1 mismatch."
+                    12501 -> "Sign-in cancelled."
+                    12500 -> "Google Play Services error."
+                    7     -> "Network error."
+                    else  -> "Error: ${e.message}"
                 })
         }
     }
     LaunchedEffect(state.isAuthenticated) { if (state.isAuthenticated) onSuccess() }
-    var email by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") };  var isRegister by remember { mutableStateOf(false) }
-    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text(text = stringResource(R.string.app_name), fontSize = 44.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Text(text = stringResource(R.string.app_tagline), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(36.dp))
-        AnimatedVisibility(isRegister) {
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(text = stringResource(R.string.full_name)) },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), shape = RoundedCornerShape(14.dp), singleLine = true)
-        }
-        OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text(text = stringResource(R.string.email)) },
-            modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            shape = RoundedCornerShape(14.dp), singleLine = true)
-        Spacer(Modifier.height(10.dp))
-        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text(text = stringResource(R.string.password)) },
-            modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), shape = RoundedCornerShape(14.dp), singleLine = true)
+
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center) {
+
+        Text(text = stringResource(R.string.app_name), fontSize = 44.sp,
+            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text(text = stringResource(R.string.app_tagline), fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(48.dp))
+
         AnimatedVisibility(state.error != null) {
-            Card(colors = CardDefaults.cardColors(MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                Text(text = state.error ?: "", modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp) }
+            Card(colors = CardDefaults.cardColors(MaterialTheme.colorScheme.errorContainer),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                Text(text = state.error ?: "", modifier = Modifier.padding(12.dp),
+                    color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp)
+            }
         }
-        // Free coins signup text hidden — coin system disabled
-        Spacer(Modifier.height(18.dp))
-        Button(onClick = { viewModel.clearError()
-            if (isRegister) viewModel.register(name, email, password) else viewModel.signInWithEmail(email, password) },
-            modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp), enabled = !state.isLoading) {
-            if (state.isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-            else Text(text = if (isRegister) stringResource(R.string.create_account) else stringResource(R.string.sign_in), fontWeight = FontWeight.Medium)
-        }
-        TextButton(onClick = { isRegister = !isRegister; viewModel.clearError() }) {
-            Text(text = if (isRegister) stringResource(R.string.already_have_account) else stringResource(R.string.new_here)) }
-        // ── Google Sign-In button ──────────────────────────────────────────
-        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-        OutlinedButton(
+
+        // Google Sign-In ONLY — email/password hidden for now
+        Button(
             onClick = {
                 viewModel.clearError()
-                // Sign out first to force fresh account picker
                 googleClient.signOut().addOnCompleteListener {
                     googleLauncher.launch(googleClient.signInIntent)
                 }
             },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(14.dp),
-            enabled = !state.isLoading
+            enabled = !state.isLoading,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
         ) {
-            Text(text = "G", fontWeight = FontWeight.Bold, fontSize = 18.sp,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(end = 10.dp))
-            Text(text = "Continue with Google", fontWeight = FontWeight.Medium)
+            if (state.isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp, color = Color.White)
+            } else {
+                Text(text = "G", fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                    color = Color.White, modifier = Modifier.padding(end = 12.dp))
+                Text(text = "Continue with Google", fontWeight = FontWeight.Medium,
+                    fontSize = 16.sp, color = Color.White)
+            }
         }
         Spacer(Modifier.height(40.dp))
     }
