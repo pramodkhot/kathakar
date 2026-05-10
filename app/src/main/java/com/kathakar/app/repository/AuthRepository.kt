@@ -79,6 +79,9 @@ class AuthRepository @Inject constructor(
             Resource.Error("Sign-in failed: " + e.localizedMessage)
         }
     }
+
+    // Sign in directly with ID token
+    suspend fun signInWithGoogleToken(idToken: String): Resource<User> {
         return try {
             val cred = GoogleAuthProvider.getCredential(idToken, null)
             val result = auth.signInWithCredential(cred).await()
