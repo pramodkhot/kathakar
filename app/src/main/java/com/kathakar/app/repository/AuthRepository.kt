@@ -68,6 +68,21 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    // New: sign in directly with ID token (from Credential Manager)
+    suspend fun signInWithGoogleToken(idToken: String): Resource<User> {
+        return try {
+            val cred = GoogleAuthProvider.getCredential(idToken, null)
+            val result = auth.signInWithCredential(cred).await()
+            val uid = result.user?.uid ?: return Resource.Error("Sign-in failed")
+            createOrUpdate(uid, result.user?.displayName ?: "User",
+                result.user?.email ?: "", result.user?.photoUrl?.toString() ?: "",
+                result.additionalUserInfo?.isNewUser == true)
+            Resource.Success(fetchUser(uid))
+        } catch (e: Exception) {
+            Resource.Error("Google sign-in failed: " + e.localizedMessage)
+        }
+    }
+
     suspend fun signInWithEmail(email: String, password: String): Resource<User> {
         return try {
             val result = auth.signInWithEmailAndPassword(email, password).await()
