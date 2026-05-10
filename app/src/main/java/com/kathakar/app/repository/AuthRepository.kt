@@ -68,8 +68,17 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    // New: sign in directly with ID token (from Credential Manager)
-    suspend fun signInWithGoogleToken(idToken: String): Resource<User> {
+    // Called after FirebaseUI completes sign-in
+    suspend fun handleFirebaseUser(user: com.google.firebase.auth.FirebaseUser): Resource<User> {
+        return try {
+            createOrUpdate(user.uid, user.displayName ?: "User",
+                user.email ?: "", user.photoUrl?.toString() ?: "",
+                false)
+            Resource.Success(fetchUser(user.uid))
+        } catch (e: Exception) {
+            Resource.Error("Sign-in failed: " + e.localizedMessage)
+        }
+    }
         return try {
             val cred = GoogleAuthProvider.getCredential(idToken, null)
             val result = auth.signInWithCredential(cred).await()
