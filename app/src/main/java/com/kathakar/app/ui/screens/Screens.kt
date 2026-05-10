@@ -140,7 +140,13 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
         // ── Google Sign-In button ──────────────────────────────────────────
         HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
         OutlinedButton(
-            onClick = { googleLauncher.launch(googleClient.signInIntent) },
+            onClick = {
+                viewModel.clearError()
+                // Sign out first to force fresh account picker
+                googleClient.signOut().addOnCompleteListener {
+                    googleLauncher.launch(googleClient.signInIntent)
+                }
+            },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(14.dp),
             enabled = !state.isLoading
