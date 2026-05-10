@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +39,12 @@ import kotlinx.coroutines.launch
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.launch
 import com.kathakar.app.R
 import com.kathakar.app.domain.model.*
 import com.kathakar.app.viewmodel.*
@@ -84,31 +91,32 @@ fun ComingSoonScreen(title: String, reason: String, onBack: () -> Unit) {
 fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val ctx = LocalContext.current
-    val gso = remember {
-        val webClientId = ctx.getString(R.string.default_web_client_id)
-        android.util.Log.e("KATHAKAR_AUTH", "Web Client ID: $webClientId")
-        android.widget.Toast.makeText(ctx, "ID: ${webClientId.take(30)}...", android.widget.Toast.LENGTH_LONG).show()
-        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(webClientId).requestEmail().build()
-    }
-    val googleClient   = remember { GoogleSignIn.getClient(ctx, gso) }
-    val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(r.data)
-                .getResult(ApiException::class.java)
-            viewModel.signInWithGoogle(account)
-        } catch (e: ApiException) {
-            viewModel.showError("Google Sign-In failed (code ${e.statusCode}). " +
-                when (e.statusCode) {
-                    10    -> "SHA-1 mismatch."
-                    12501 -> "Sign-in cancelled."
-                    12500 -> "Google Play Services error."
-                    7     -> "Network error."
-                    else  -> "Error: ${e.message}"
-                })
+    val scope = rememberCoroutineScope()
+    val credentialManager = remember { CredentialManager.create(ctx) }
+    LaunchedEffect(state.isAuthenticated) { if (state.isAuthenticated) onSuccess() }
+
+    fun signInWithGoogle() {
+        scope.launch {
+            try {
+                val googleIdOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(ctx.getString(R.string.default_web_client_id))
+                    .setAutoSelectEnabled(false)
+                    .build()
+                val request = GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
+                val result = credentialManager.getCredential(ctx as android.app.Activity, request)
+                val credential = result.credential
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                viewModel.signInWithGoogleToken(googleIdTokenCredential.idToken)
+            } catch (e: GetCredentialException) {
+                viewModel.showError("Google Sign-In failed: ${e.message}")
+            } catch (e: Exception) {
+                viewModel.showError("Error: ${e.message}")
+            }
         }
     }
-    LaunchedEffect(state.isAuthenticated) { if (state.isAuthenticated) onSuccess() }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -130,12 +138,7 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
 
         // Google Sign-In ONLY — email/password hidden for now
         Button(
-            onClick = {
-                viewModel.clearError()
-                googleClient.signOut().addOnCompleteListener {
-                    googleLauncher.launch(googleClient.signInIntent)
-                }
-            },
+            onClick = { viewModel.clearError(); signInWithGoogle() },
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(14.dp),
             enabled = !state.isLoading,
