@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.firebase.auth.FirebaseUser
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
@@ -91,23 +92,34 @@ fun ComingSoonScreen(title: String, reason: String, onBack: () -> Unit) {
 fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val ctx   = LocalContext.current
-    val gso   = remember {
-        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(ctx.getString(R.string.default_web_client_id))
-            .requestEmail()
-            .build()
-    }
-    val googleClient = remember { GoogleSignIn.getClient(ctx, gso) }
-    val launcher = rememberLauncherForActivityResult(
+
+    // FirebaseUI handles Google Sign-In internally — no SHA-1 issues
+    val firebaseUiLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                .getResult(ApiException::class.java)
-            viewModel.signInWithGoogle(account)
-        } catch (e: ApiException) {
-            viewModel.showError("Sign-in failed (${e.statusCode}): ${e.message}")
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            // User signed in successfully via FirebaseUI
+            val user = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+            if (user != null) {
+                viewModel.onFirebaseUserSignedIn(user)
+            }
+        } else {
+            val response = com.firebase.ui.auth.IdpResponse.fromResultIntent(result.data)
+            if (response != null) {
+                viewModel.showError("Sign-in failed: ${response.error?.errorCode}")
+            }
         }
+    }
+
+    val signInIntent = remember {
+        com.firebase.ui.auth.AuthUI.getInstance()
+            .createSignInIntentBuilder()
+            .setAvailableProviders(listOf(
+                com.firebase.ui.auth.AuthUI.IdpConfig.GoogleBuilder().build(),
+                com.firebase.ui.auth.AuthUI.IdpConfig.EmailBuilder().build()
+            ))
+            .setIsSmartLockEnabled(false)
+            .build()
     }
 
     LaunchedEffect(state.isAuthenticated) { if (state.isAuthenticated) onSuccess() }
@@ -135,20 +147,15 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         } else {
             Button(
-                onClick = {
-                    viewModel.clearError()
-                    googleClient.signOut().addOnCompleteListener {
-                        launcher.launch(googleClient.signInIntent)
-                    }
-                },
+                onClick = { firebaseUiLauncher.launch(signInIntent) },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Text(text = "G", fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                Text("G", fontWeight = FontWeight.Bold, fontSize = 20.sp,
                     color = Color.White, modifier = Modifier.padding(end = 12.dp))
-                Text(text = "Continue with Google", fontWeight = FontWeight.Medium,
+                Text("Continue with Google", fontWeight = FontWeight.Medium,
                     fontSize = 16.sp, color = Color.White)
             }
         }
