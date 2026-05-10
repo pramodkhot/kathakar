@@ -1,6 +1,6 @@
 [versions]
-agp                      = "8.5.2"
-kotlin                   = "2.0.0"
+agp                      = "8.3.2"
+kotlin                   = "1.9.24"
 coreKtx                  = "1.13.1"
 lifecycleRuntimeKtx      = "2.8.3"
 activityCompose          = "1.9.0"
@@ -48,7 +48,6 @@ espresso-core            = { group = "androidx.test.espresso",      name = "espr
 [plugins]
 android-application = { id = "com.android.application",              version.ref = "agp" }
 kotlin-android      = { id = "org.jetbrains.kotlin.android",         version.ref = "kotlin" }
-kotlin-compose      = { id = "org.jetbrains.kotlin.plugin.compose",  version.ref = "kotlin" }
 google-services     = { id = "com.google.gms.google-services",       version = "4.4.2" }
 hilt                = { id = "com.google.dagger.hilt.android",       version.ref = "hilt" }
 kotlin-kapt         = { id = "org.jetbrains.kotlin.kapt",            version.ref = "kotlin" }
