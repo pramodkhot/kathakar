@@ -90,57 +90,33 @@ fun ComingSoonScreen(title: String, reason: String, onBack: () -> Unit) {
 @Composable
 fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
     val state by viewModel.state.collectAsState()
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val credentialManager = remember { CredentialManager.create(ctx) }
-    LaunchedEffect(state.isAuthenticated) { if (state.isAuthenticated) onSuccess() }
-
-    fun signInWithGoogle() {
-        scope.launch {
-            try {
-                val webClientId = ctx.getString(R.string.default_web_client_id)
-                // Try with all accounts (not just previously authorized)
-                val googleIdOption = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId(webClientId)
-                    .setAutoSelectEnabled(false)
-                    .build()
-                val request = GetCredentialRequest.Builder()
-                    .addCredentialOption(googleIdOption)
-                    .build()
-                // Use activity context for proper UI display
-                val activity = ctx as? android.app.Activity
-                val result = if (activity != null) {
-                    credentialManager.getCredential(activity, request)
-                } else {
-                    credentialManager.getCredential(ctx, request)
-                }
-                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(result.credential.data)
-                viewModel.signInWithGoogleToken(googleIdTokenCredential.idToken)
-            } catch (e: androidx.credentials.exceptions.NoCredentialException) {
-                // No Google accounts on device — fall back to legacy sign-in
-                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                    .requestIdToken(ctx.getString(R.string.default_web_client_id))
-                    .requestEmail()
-                    .build()
-                val client = GoogleSignIn.getClient(ctx, gso)
-                client.signOut()
-                // Launch legacy sign-in intent via activity
-                (ctx as? android.app.Activity)?.startActivityForResult(
-                    client.signInIntent, 9001)
-                viewModel.showError("Please sign in with your Google account")
-            } catch (e: GetCredentialException) {
-                viewModel.showError("Google Sign-In failed: ${e.type} - ${e.message}")
-            } catch (e: Exception) {
-                viewModel.showError("Error: ${e.message}")
-            }
+    val ctx   = LocalContext.current
+    val gso   = remember {
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(ctx.getString(R.string.default_web_client_id))
+            .requestEmail()
+            .build()
+    }
+    val googleClient = remember { GoogleSignIn.getClient(ctx, gso) }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        try {
+            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                .getResult(ApiException::class.java)
+            viewModel.signInWithGoogle(account)
+        } catch (e: ApiException) {
+            viewModel.showError("Sign-in failed (${e.statusCode}): ${e.message}")
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center) {
+    LaunchedEffect(state.isAuthenticated) { if (state.isAuthenticated) onSuccess() }
 
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
         Text(text = stringResource(R.string.app_name), fontSize = 44.sp,
             fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text(text = stringResource(R.string.app_tagline), fontSize = 13.sp,
@@ -155,18 +131,21 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
             }
         }
 
-        // Google Sign-In ONLY — email/password hidden for now
-        Button(
-            onClick = { viewModel.clearError(); signInWithGoogle() },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(14.dp),
-            enabled = !state.isLoading,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-        ) {
-            if (state.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp),
-                    strokeWidth = 2.dp, color = Color.White)
-            } else {
+        if (state.isLoading) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        } else {
+            Button(
+                onClick = {
+                    viewModel.clearError()
+                    googleClient.signOut().addOnCompleteListener {
+                        launcher.launch(googleClient.signInIntent)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary)
+            ) {
                 Text(text = "G", fontWeight = FontWeight.Bold, fontSize = 20.sp,
                     color = Color.White, modifier = Modifier.padding(end = 12.dp))
                 Text(text = "Continue with Google", fontWeight = FontWeight.Medium,
