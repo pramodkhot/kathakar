@@ -85,41 +85,17 @@ fun ComingSoonScreen(title: String, reason: String, onBack: () -> Unit) {
 @Composable
 fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
     val state by viewModel.state.collectAsState()
-    val ctx   = LocalContext.current
-
-    // FirebaseUI handles Google Sign-In internally — no SHA-1 issues
-    val firebaseUiLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            // User signed in successfully via FirebaseUI
-            val user = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
-            if (user != null) {
-                viewModel.onFirebaseUserSignedIn(user)
-            }
-        } else {
-            val response = com.firebase.ui.auth.IdpResponse.fromResultIntent(result.data)
-            if (response != null) {
-                viewModel.showError("Sign-in failed: ${response.error?.errorCode}")
-            }
-        }
-    }
-
-    val signInIntent = remember {
-        com.firebase.ui.auth.AuthUI.getInstance()
-            .createSignInIntentBuilder()
-            .setAvailableProviders(listOf(
-                com.firebase.ui.auth.AuthUI.IdpConfig.GoogleBuilder().build(),
-                com.firebase.ui.auth.AuthUI.IdpConfig.EmailBuilder().build()
-            ))
-            .setIsSmartLockEnabled(false)
-            .build()
-    }
+    var email    by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var name     by remember { mutableStateOf("") }
+    var isReg    by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.isAuthenticated) { if (state.isAuthenticated) onSuccess() }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
+        modifier = Modifier.fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -127,31 +103,70 @@ fun LoginScreen(viewModel: AuthViewModel, onSuccess: () -> Unit) {
             fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text(text = stringResource(R.string.app_tagline), fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(36.dp))
 
+        // Name field (register only)
+        AnimatedVisibility(isReg) {
+            OutlinedTextField(
+                value = name, onValueChange = { name = it },
+                label = { Text(stringResource(R.string.full_name)) },
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                shape = RoundedCornerShape(14.dp), singleLine = true)
+        }
+
+        // Email
+        OutlinedTextField(
+            value = email, onValueChange = { email = it },
+            label = { Text(stringResource(R.string.email)) },
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            shape = RoundedCornerShape(14.dp), singleLine = true)
+        Spacer(Modifier.height(10.dp))
+
+        // Password
+        OutlinedTextField(
+            value = password, onValueChange = { password = it },
+            label = { Text(stringResource(R.string.password)) },
+            modifier = Modifier.fillMaxWidth(),
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            shape = RoundedCornerShape(14.dp), singleLine = true)
+
+        // Error
         AnimatedVisibility(state.error != null) {
             Card(colors = CardDefaults.cardColors(MaterialTheme.colorScheme.errorContainer),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
                 Text(text = state.error ?: "", modifier = Modifier.padding(12.dp),
                     color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp)
             }
         }
 
-        if (state.isLoading) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-        } else {
-            Button(
-                onClick = { firebaseUiLauncher.launch(signInIntent) },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Text("G", fontWeight = FontWeight.Bold, fontSize = 20.sp,
-                    color = Color.White, modifier = Modifier.padding(end = 12.dp))
-                Text("Continue with Google", fontWeight = FontWeight.Medium,
-                    fontSize = 16.sp, color = Color.White)
-            }
+        Spacer(Modifier.height(18.dp))
+
+        // Sign In / Create Account button
+        Button(
+            onClick = {
+                viewModel.clearError()
+                if (isReg) viewModel.register(name, email, password)
+                else viewModel.signInWithEmail(email, password)
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            enabled = !state.isLoading
+        ) {
+            if (state.isLoading)
+                CircularProgressIndicator(modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+            else
+                Text(if (isReg) stringResource(R.string.create_account)
+                     else stringResource(R.string.sign_in),
+                    fontWeight = FontWeight.Medium)
+        }
+
+        // Toggle register/login
+        TextButton(onClick = { isReg = !isReg; viewModel.clearError() }) {
+            Text(if (isReg) stringResource(R.string.already_have_account)
+                 else stringResource(R.string.new_here))
         }
         Spacer(Modifier.height(40.dp))
     }
